@@ -278,6 +278,26 @@ export const nearbyPlaceSchema = z.object({
 });
 export type NearbyPlace = z.infer<typeof nearbyPlaceSchema>;
 
+export const intelligenceSignalTopicSchema = z.enum(["geo", "community", "agency"]);
+export type IntelligenceSignalTopic = z.infer<typeof intelligenceSignalTopicSchema>;
+
+export const intelligenceChannelSignalSchema = z.object({
+  topic: intelligenceSignalTopicSchema,
+  title: z.string(),
+  summary: z.string(),
+  highlights: z.array(z.string()).optional(),
+  confidence: z.enum(["low", "medium", "high"]),
+});
+export type IntelligenceChannelSignal = z.infer<typeof intelligenceChannelSignalSchema>;
+
+export const intelligenceFusionSchema = z.object({
+  mapSignals: z.array(intelligenceChannelSignalSchema),
+  webSignals: z.array(intelligenceChannelSignalSchema),
+  conflicts: z.array(z.string()),
+  confidence: z.enum(["low", "medium", "high"]),
+});
+export type IntelligenceFusion = z.infer<typeof intelligenceFusionSchema>;
+
 export const geoAnalysisSchema = z.object({
   noiseRisk: noiseRiskSchema,
   transitScore: z.number(),
@@ -305,6 +325,7 @@ export const propertyIntelligenceSchema = z.object({
   geoAnalysis: geoAnalysisSchema.optional(),
   communityInsight: communityInsightSchema.optional(),
   agencyBackground: agencyBackgroundSchema.optional(),
+  fusion: intelligenceFusionSchema.optional(),
 });
 export type PropertyIntelligence = z.infer<typeof propertyIntelligenceSchema>;
 

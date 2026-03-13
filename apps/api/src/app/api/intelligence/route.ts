@@ -4,6 +4,8 @@ import {
   propertyIntelligenceSchema,
   sanitizePropertyIntelligence,
   type GeoAnalysis,
+  type IntelligenceChannelSignal,
+  type IntelligenceFusion,
 } from "@inspect-ai/contracts";
 import { analyzeGeoContext } from "@/lib/agents/geoAnalyzer";
 import { summarizeMapsGroundedIntelligence } from "@/lib/agents/mapsGroundedIntelligence";
@@ -88,6 +90,125 @@ export async function POST(request: Request) {
   const failureDetails: string[] = [];
   const fallbackReasons: string[] = [];
 
+  function buildSignal(args: {
+    topic: IntelligenceChannelSignal["topic"];
+    title: string;
+    summary?: string;
+    highlights?: string[];
+    confidence: IntelligenceChannelSignal["confidence"];
+  }): IntelligenceChannelSignal | null {
+    if (!args.summary?.trim()) {
+      return null;
+    }
+
+    return {
+      topic: args.topic,
+      title: args.title,
+      summary: args.summary.trim(),
+      highlights: args.highlights?.filter(Boolean).slice(0, 4),
+      confidence: args.confidence,
+    };
+  }
+
+  function buildFusion(args: {
+    geo: Awaited<ReturnType<typeof analyzeGeoContext>>;
+    grounded?: Awaited<ReturnType<typeof summarizeMapsGroundedIntelligence>>;
+    community: { communityInsight: NonNullable<ReturnType<typeof buildCommunityFallback>> | { summary: string; highlights?: string[]; sentiment: string; citations: { sourceId: string; title: string; url: string }[] } };
+    agency: { agencyBackground: NonNullable<ReturnType<typeof buildAgencyFallback>> | { agencyName: string; summary?: string; highlights?: string[]; sentimentScore: number; commonComplaints: string[]; negotiationLeverage: string; citations: { sourceId: string; title: string; url: string }[] } };
+  }): IntelligenceFusion {
+    const geoMapSignals = args.geo.mapSignals ?? [];
+    const geoWebSignals = args.geo.webSignals ?? [];
+
+    const mapSignals = [
+      buildSignal({
+        topic: "geo",
+        title: "Map access & amenities",
+        summary:
+          args.grounded?.geoSummary ??
+          (geoMapSignals.length > 0
+            ? geoMapSignals.join(". ")
+            : args.geo.geoAnalysis.warning),
+        highlights: args.grounded?.geoKeySignals ?? geoMapSignals,
+        confidence: geoMapSignals.length >= 2 ? "high" : "medium",
+      }),
+      buildSignal({
+        topic: "community",
+        title: "Maps-grounded local context",
+        summary: args.grounded?.communityInsight?.summary,
+        highlights: args.grounded?.communityInsight?.highlights,
+        confidence:
+          (args.grounded?.communityInsight?.citations.length ?? 0) >= 2 ? "high" : "medium",
+      }),
+      buildSignal({
+        topic: "agency",
+        title: "Maps-grounded agency profile",
+        summary: args.grounded?.agencyBackground?.summary ?? args.grounded?.agencyBackground?.negotiationLeverage,
+        highlights: args.grounded?.agencyBackground?.highlights,
+        confidence:
+          (args.grounded?.agencyBackground?.citations.length ?? 0) >= 2 ? "high" : "medium",
+      }),
+    ].filter(Boolean) as IntelligenceChannelSignal[];
+
+    const webSignals = [
+      buildSignal({
+        topic: "geo",
+        title: "Web local risk signals",
+        summary: args.geo.webSummary,
+        highlights: geoWebSignals,
+        confidence: geoWebSignals.length >= 2 ? "medium" : "low",
+      }),
+      buildSignal({
+        topic: "community",
+        title: "Web community signal",
+        summary: args.community.communityInsight.summary,
+        highlights: args.community.communityInsight.highlights,
+        confidence: args.community.communityInsight.citations.length >= 2 ? "high" : "medium",
+      }),
+      buildSignal({
+        topic: "agency",
+        title: "Web agency signal",
+        summary:
+          args.agency.agencyBackground.summary ?? args.agency.agencyBackground.negotiationLeverage,
+        highlights: args.agency.agencyBackground.highlights,
+        confidence: args.agency.agencyBackground.citations.length >= 2 ? "high" : "medium",
+      }),
+    ].filter(Boolean) as IntelligenceChannelSignal[];
+
+    const conflicts: string[] = [];
+
+    if (
+      args.geo.geoAnalysis.noiseRisk === "High" &&
+      args.community.communityInsight.sentiment === "positive"
+    ) {
+      conflicts.push("Map convenience looks strong, but web evidence still flags meaningful noise or disruption.");
+    }
+
+    if (
+      args.grounded?.communityInsight?.sentiment === "positive" &&
+      ["mixed", "negative"].includes(args.community.communityInsight.sentiment)
+    ) {
+      conflicts.push("Maps-grounded local context is more positive than public web discussion. Verify the street in person.");
+    }
+
+    if (args.agency.agencyBackground.sentimentScore <= 2.5) {
+      conflicts.push("Agency reputation is weaker than the location signal. Use written commitments, not verbal assurances.");
+    }
+
+    const confidence: IntelligenceFusion["confidence"] =
+      mapSignals.length >= 2 && webSignals.length >= 2
+        ? "high"
+        : mapSignals.length >= 1 && webSignals.length >= 1
+        ? "medium"
+        : "low";
+
+    return {
+      mapSignals,
+      webSignals,
+      conflicts: [...new Set(conflicts)].slice(0, 4),
+      confidence,
+    };
+  }
+
   function mergeGeoAnalysis(base: GeoAnalysis, grounded?: { geoSummary?: string; geoKeySignals?: string[] }) {
     return {
       ...base,
@@ -138,7 +259,9 @@ export async function POST(request: Request) {
   const grounded = groundedResult.status === "fulfilled" ? groundedResult.value : undefined;
 
   const community =
-    grounded?.communityInsight
+    communityResult.status === "fulfilled" && communityResult.value.provider !== "fallback"
+      ? communityResult.value
+      : grounded?.communityInsight
       ? {
           communityInsight: grounded.communityInsight,
           provider: grounded.provider,
@@ -155,7 +278,9 @@ export async function POST(request: Request) {
         };
 
   const agency =
-    grounded?.agencyBackground
+    agencyResult.status === "fulfilled" && agencyResult.value.provider !== "fallback"
+      ? agencyResult.value
+      : grounded?.agencyBackground
       ? {
           agencyBackground: grounded.agencyBackground,
           provider: grounded.provider,
@@ -209,9 +334,10 @@ export async function POST(request: Request) {
         (parsed.data.coordinates
           ? `${parsed.data.coordinates.lat.toFixed(4)}, ${parsed.data.coordinates.lng.toFixed(4)}`
           : undefined),
-      geoAnalysis: mergeGeoAnalysis(geo.geoAnalysis, grounded),
-      communityInsight: community.communityInsight,
-      agencyBackground: agency.agencyBackground,
+        geoAnalysis: mergeGeoAnalysis(geo.geoAnalysis, grounded),
+        communityInsight: community.communityInsight,
+        agencyBackground: agency.agencyBackground,
+        fusion: buildFusion({ geo, grounded, community, agency }),
       })
     );
 

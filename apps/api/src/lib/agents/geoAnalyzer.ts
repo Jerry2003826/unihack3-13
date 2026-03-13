@@ -1,15 +1,18 @@
+import { z } from "zod";
 import type {
   DestinationPoint,
   GeoAnalysis,
   IntelligenceDepth,
 } from "@inspect-ai/contracts";
-import { geoAnalysisSchema, sanitizeDisplayList } from "@inspect-ai/contracts";
+import { geoAnalysisSchema, sanitizeDisplayList, sanitizeDisplayText } from "@inspect-ai/contracts";
+import { callGeminiJson, callGeminiSearchGroundedJson, type SourceCatalogItem } from "@/lib/ai";
 import { appEnv } from "@/lib/env";
 import { buildGeoFallback, scoreSnippetSentiment } from "@/lib/fallbacks";
 import { fetchJson } from "@/lib/http";
+import { type GroundedCatalogItem } from "@/lib/grounding";
 import { geocodeAddress } from "@/lib/providers/googleMapsGeocode";
 import { fetchNearbyEssentials } from "@/lib/providers/googlePlaces";
-import { getTavilyClient } from "@/lib/providers/tavily";
+import { filterGroundedWebCatalog } from "@/lib/search/relevance";
 
 interface Coordinates {
   lat: number;
@@ -27,6 +30,23 @@ interface RoutesResponse {
   routes?: Array<{
     duration?: string;
   }>;
+}
+
+const groundedGeoRiskSchema = z.object({
+  summary: z.string().optional(),
+  signals: z.union([z.array(z.string()).max(4), z.string()]).optional(),
+  noiseRisk: z.string().optional(),
+});
+
+const synthesizedGeoRiskSchema = z.object({
+  summary: z.string(),
+  signals: z.array(z.string()).max(4),
+  noiseRisk: z.string(),
+});
+
+interface QueryFamilyPass {
+  family: string;
+  prompt: string;
 }
 
 function parseDurationMinutes(duration?: string) {
@@ -125,23 +145,204 @@ async function computeDestinationConvenience(origin: Coordinates, destinations?:
   return results.filter(Boolean) as string[];
 }
 
-async function searchRiskSignals(label: string) {
-  const tavily = getTavilyClient();
-  if (!tavily) {
+function normalizeStringList(value: string[] | string | undefined) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (!value) {
     return [];
   }
 
+  return value
+    .split(/\n|•|;+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function mergeCatalogs(catalogs: GroundedCatalogItem[][]) {
+  const merged: GroundedCatalogItem[] = [];
+  const seen = new Set<string>();
+
+  for (const catalog of catalogs) {
+    for (const item of catalog) {
+      const key = `${item.title}::${item.url}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      merged.push({
+        ...item,
+        sourceId: `geo-${merged.length + 1}`,
+      });
+    }
+  }
+
+  return merged;
+}
+
+function toSourceCatalog(catalog: GroundedCatalogItem[]): SourceCatalogItem[] {
+  return catalog.map((item) => ({
+    sourceId: item.sourceId,
+    title: item.title,
+    url: item.url,
+    snippet: item.snippet,
+    provider: item.provider,
+  }));
+}
+
+function annotateCatalogWithFamily(catalog: GroundedCatalogItem[], family: string) {
+  return catalog.map((item) => ({
+    ...item,
+    snippet: [`Family: ${family}`, item.snippet ?? item.title].filter(Boolean).join(" | "),
+  }));
+}
+
+function normalizeNoiseRisk(value: string | undefined, snippets: string[]): GeoAnalysis["noiseRisk"] {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized?.includes("high")) {
+    return "High";
+  }
+  if (normalized?.includes("medium")) {
+    return "Medium";
+  }
+  if (normalized?.includes("low")) {
+    return "Low";
+  }
+
+  const sentiment = scoreSnippetSentiment(snippets);
+  return sentiment <= -3 ? "High" : sentiment < 0 ? "Medium" : "Low";
+}
+
+async function searchRiskSignals(label: string, depth: IntelligenceDepth) {
   try {
-    const response = await tavily.search(`${label} noise traffic safety construction renters`, {
-      topic: "general",
-      searchDepth: "fast",
-      maxResults: 4,
-      includeRawContent: "markdown",
+    const prompts: QueryFamilyPass[] = [
+      {
+        family: "noise-and-traffic",
+        prompt: [
+          `Search family: noise and traffic for "${label}".`,
+          "Focus on renter-relevant road noise, congestion, bus or train noise, major-road exposure, and recurring traffic complaints.",
+          "Prioritize local news, council notices, community discussion, and complaint-style pages. Avoid map listings, stop cards, business directories, and generic place pages.",
+          "Return only JSON.",
+          "summary must be under 140 characters.",
+          "signals must be 2-4 short bullets under 75 characters each.",
+          "noiseRisk must be one of: Low, Medium, High.",
+        ].join("\n"),
+      },
+      {
+        family: "construction-and-disruption",
+        prompt: [
+          `Search family: construction and disruption for "${label}".`,
+          "Focus on roadworks, nearby construction, dust, access disruption, industrial disturbance, and recurring renter complaints about works.",
+          "Prioritize local news, council notices, community discussion, and complaint-style pages. Avoid map listings, stop cards, business directories, and generic place pages.",
+          "Return only JSON.",
+          "summary must be under 140 characters.",
+          "signals must be 2-4 short bullets under 75 characters each.",
+          "noiseRisk must be one of: Low, Medium, High.",
+        ].join("\n"),
+      },
+      {
+        family: "safety-and-after-hours",
+        prompt: [
+          `Search family: safety and after-hours activity for "${label}".`,
+          "Focus on street safety, late-night activity, practical after-hours concerns for renters, and whether the area feels comfortable returning home at night.",
+          "Prioritize local news, community discussion, council notices, and complaint-style pages. Avoid map listings, stop cards, business directories, and generic place pages.",
+          "Return only JSON.",
+          "summary must be under 140 characters.",
+          "signals must be 2-4 short bullets under 75 characters each.",
+          "noiseRisk must be one of: Low, Medium, High.",
+        ].join("\n"),
+      },
+      ...(depth === "full"
+        ? [
+            {
+              family: "renter-complaints-and-building-warnings",
+              prompt: [
+                `Search family: renter complaints and building warnings for "${label}".`,
+                "Focus on renter complaints about the building, nearby disruption, neighbour issues, and repeated local warnings that affect day-to-day living.",
+                "Prioritize forum threads, resident discussion, local news, and complaint-style pages. Avoid map listings, stop cards, business directories, and generic place pages.",
+                "Return only JSON.",
+                "summary must be under 140 characters.",
+                "signals must be 2-4 short bullets under 75 characters each.",
+                "noiseRisk must be one of: Low, Medium, High.",
+              ].join("\n"),
+            },
+          ]
+        : []),
+    ];
+
+    const passResults = await Promise.allSettled(
+      prompts.map(({ family, prompt }) =>
+        callGeminiSearchGroundedJson({
+          model: appEnv.geminiGroundedModel,
+          schema: groundedGeoRiskSchema,
+          timeoutMs: depth === "full" ? 10_000 : 7_000,
+          prompt,
+        }).then((result) => ({
+          ...result,
+          catalog: annotateCatalogWithFamily(
+            result.catalog.filter((item) => item.sourceId.startsWith("web-")),
+            family
+          ),
+        }))
+      )
+    );
+
+    const mergedCatalog = mergeCatalogs(
+      passResults.flatMap((result) => (result.status === "fulfilled" ? [result.value.catalog] : []))
+    );
+    const filteredCatalog = filterGroundedWebCatalog(mergedCatalog, {
+      channel: "geo",
+      context: [label, "noise traffic construction safety late night parking renters"],
+      minScore: 4,
+    });
+    const snippets = filteredCatalog.map((item) => item.snippet ?? item.title).filter(Boolean);
+
+    if (filteredCatalog.length === 0) {
+      return {
+        snippets,
+        summary: undefined,
+        signals: [],
+        noiseRisk: "Low" as const,
+        provider: "fallback",
+      };
+    }
+
+    const structured = await callGeminiJson({
+      model: appEnv.geminiIntelligenceModel,
+      schema: synthesizedGeoRiskSchema,
+      timeoutMs: depth === "full" ? 7_000 : 5_000,
+      prompt: [
+        `Summarize renter-relevant public web signals for "${label}".`,
+        "You are synthesizing evidence from multiple Google Search grounded passes.",
+        "Prefer repeated or corroborated signals over isolated comments.",
+        "Return only JSON.",
+        "summary must be a short renter-facing sentence under 170 characters.",
+        "signals must be 2-4 short bullets under 80 characters each.",
+        "noiseRisk must be one of: Low, Medium, High.",
+        "Do not include business directory fragments, review widgets, opening hours, or copied list pages.",
+        JSON.stringify({ sourceCatalog: toSourceCatalog(filteredCatalog) }, null, 2),
+      ].join("\n"),
     });
 
-    return response.results.map((result) => result.content).filter(Boolean);
+    return {
+      snippets,
+      summary: sanitizeDisplayText(structured.summary, { maxLength: 170, maxSegments: 2 }),
+      signals: sanitizeDisplayList(normalizeStringList(structured.signals), {
+        maxItems: 4,
+        itemMaxLength: 80,
+      }),
+      noiseRisk: normalizeNoiseRisk(structured.noiseRisk, snippets),
+      provider: "gemini+google-search",
+    };
   } catch {
-    return [];
+    return {
+      snippets: [],
+      summary: undefined,
+      signals: [],
+      noiseRisk: "Low" as const,
+      provider: "fallback",
+    };
   }
 }
 
@@ -222,6 +423,32 @@ function buildGeoKeySignals(
   return [...new Set(signals)].slice(0, 4);
 }
 
+function buildMapSignals(
+  nearbyTransit: string[],
+  destinationConvenience: string[],
+  nearbyEssentials: GeoAnalysis["nearbyEssentials"]
+) {
+  const essentials = nearbyEssentials ?? [];
+  const signals: string[] = [];
+
+  if (nearbyTransit.length > 0) {
+    signals.push(...nearbyTransit.slice(0, 2));
+  }
+  if (destinationConvenience.length > 0) {
+    signals.push(...destinationConvenience.slice(0, 2));
+  }
+  if (essentials.length > 0) {
+    signals.push(
+      ...essentials.slice(0, 2).map((place) => {
+        const distance = place.distanceMeters ? `${Math.round(place.distanceMeters)}m` : "nearby";
+        return `${place.name} (${place.category}) is ${distance} away`;
+      })
+    );
+  }
+
+  return [...new Set(signals)].slice(0, 4);
+}
+
 export async function analyzeGeoContext(args: {
   address?: string;
   coordinates?: Coordinates;
@@ -255,10 +482,10 @@ export async function analyzeGeoContext(args: {
     };
   }
 
-  const [nearbyTransitResult, destinationResult, riskSnippets, essentialsResult] = await Promise.allSettled([
+  const [nearbyTransitResult, destinationResult, riskSignalsResult, essentialsResult] = await Promise.allSettled([
     searchNearbyTransit(coordinates),
     computeDestinationConvenience(coordinates, args.targetDestinations),
-    searchRiskSignals(resolvedAddress ?? `${coordinates.lat}, ${coordinates.lng}`),
+    searchRiskSignals(resolvedAddress ?? `${coordinates.lat}, ${coordinates.lng}`, args.depth),
     fetchNearbyEssentials(coordinates),
   ]);
 
@@ -270,29 +497,47 @@ export async function analyzeGeoContext(args: {
     destinationResult.status === "fulfilled" ? destinationResult.value : [],
     { maxItems: 3, itemMaxLength: 90 }
   );
-  const snippets = riskSnippets.status === "fulfilled" ? riskSnippets.value : [];
+  const riskSignals =
+    riskSignalsResult.status === "fulfilled"
+      ? riskSignalsResult.value
+      : {
+          snippets: [],
+          summary: undefined,
+          signals: [],
+          noiseRisk: "Low" as const,
+          provider: "fallback",
+        };
   const nearbyEssentials = essentialsResult.status === "fulfilled" ? essentialsResult.value : [];
-
-  const sentiment = scoreSnippetSentiment(snippets);
-  const noiseRisk: GeoAnalysis["noiseRisk"] = sentiment <= -3 ? "High" : sentiment < 0 ? "Medium" : "Low";
-  const warning = buildGeoWarning(snippets, nearbyTransit.length > 0);
+  const snippets = riskSignals.snippets;
+  const warning = riskSignals.summary ?? buildGeoWarning(snippets, nearbyTransit.length > 0);
 
   return {
     geoAnalysis: geoAnalysisSchema.parse({
-      noiseRisk,
+      noiseRisk: riskSignals.noiseRisk,
       transitScore: buildTransitScore(nearbyTransit, destinationConvenience),
       warning,
-      keySignals: buildGeoKeySignals(snippets, nearbyTransit, destinationConvenience, nearbyEssentials),
+      keySignals:
+        riskSignals.signals.length > 0
+          ? buildGeoKeySignals(
+              riskSignals.signals,
+              nearbyTransit,
+              destinationConvenience,
+              nearbyEssentials
+            )
+          : buildGeoKeySignals(snippets, nearbyTransit, destinationConvenience, nearbyEssentials),
       nearbyTransit,
       destinationConvenience,
       nearbyEssentials,
     }),
+    mapSignals: buildMapSignals(nearbyTransit, destinationConvenience, nearbyEssentials),
+    webSignals: riskSignals.signals,
+    webSummary: warning,
     resolvedAddress,
-    provider: appEnv.googleMapsApiKey ? "google-maps+tavily" : "tavily",
+    provider: appEnv.googleMapsApiKey ? "google-maps+google-search" : riskSignals.provider,
     fallbackReason:
       nearbyTransitResult.status === "rejected" ||
       destinationResult.status === "rejected" ||
-      riskSnippets.status === "rejected" ||
+      riskSignalsResult.status === "rejected" ||
       essentialsResult.status === "rejected"
         ? "geo_partial_failure"
         : undefined,

@@ -1,27 +1,184 @@
+import { z } from "zod";
 import type { AgencyBackground, IntelligenceDepth } from "@inspect-ai/contracts";
-import { agencyBackgroundSchema } from "@inspect-ai/contracts";
-import { callGeminiJson, sanitizeCitations, type SourceCatalogItem } from "@/lib/ai";
+import { agencyBackgroundSchema, sanitizeDisplayList, sanitizeDisplayText } from "@inspect-ai/contracts";
+import { callGeminiJson, callGeminiSearchGroundedJson, sanitizeCitations, type SourceCatalogItem } from "@/lib/ai";
 import { appEnv } from "@/lib/env";
-import { buildAgencyFallback, deriveComplaints, scoreSnippetSentiment } from "@/lib/fallbacks";
-import { getTavilyClient } from "@/lib/providers/tavily";
-import { withTimeout } from "@/lib/http";
+import { buildAgencyFallback } from "@/lib/fallbacks";
+import { type GroundedCatalogItem } from "@/lib/grounding";
+import { filterGroundedWebCatalog } from "@/lib/search/relevance";
 
-function buildCatalog(results: Array<{ title: string; url: string; content: string }>): SourceCatalogItem[] {
-  return results.map((result, index) => ({
-    sourceId: `agency-${index + 1}`,
-    title: result.title,
-    url: result.url,
-    snippet: result.content,
-    provider: "tavily",
+const searchPassSchema = z.object({
+  summary: z.string().optional(),
+  highlights: z.union([z.array(z.string()).max(4), z.string()]).optional(),
+  sentimentScore: z.union([z.number().min(1).max(5), z.string()]).optional(),
+  commonComplaints: z.union([z.array(z.string()).max(3), z.string()]).optional(),
+  negotiationLeverage: z.string().optional(),
+});
+
+interface QueryFamilyPass {
+  family: string;
+  prompt: string;
+}
+
+function normalizeStringList(value: string[] | string | undefined) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split(/\n|•|;+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeSentimentScore(value: number | string | undefined) {
+  if (typeof value === "number") {
+    return Math.max(1, Math.min(5, value));
+  }
+
+  const parsed = Number.parseFloat(value ?? "");
+  if (Number.isFinite(parsed)) {
+    return Math.max(1, Math.min(5, parsed));
+  }
+
+  return 3;
+}
+
+function tokenize(value?: string) {
+  return [...new Set((value ?? "").toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length >= 4))];
+}
+
+function rankCatalog(catalog: GroundedCatalogItem[], queries: string[], limit: number) {
+  const tokens = queries.flatMap((query) => tokenize(query));
+  if (tokens.length === 0) {
+    return catalog.slice(0, limit);
+  }
+
+  const ranked = catalog
+    .map((item) => {
+      const haystack = `${item.title} ${item.url} ${item.snippet ?? ""}`.toLowerCase();
+      const score = tokens.reduce((total, token) => total + (haystack.includes(token) ? 1 : 0), 0);
+      return { item, score };
+    })
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => right.score - left.score);
+
+  return (ranked.length > 0 ? ranked.map((entry) => entry.item) : catalog).slice(0, limit);
+}
+
+function mergeCatalogs(catalogs: GroundedCatalogItem[][]) {
+  const merged: GroundedCatalogItem[] = [];
+  const seen = new Set<string>();
+
+  for (const catalog of catalogs) {
+    for (const item of catalog) {
+      const key = `${item.title}::${item.url}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      merged.push({
+        ...item,
+        sourceId: `agency-${merged.length + 1}`,
+      });
+    }
+  }
+
+  return merged;
+}
+
+function toSourceCatalog(catalog: GroundedCatalogItem[]): SourceCatalogItem[] {
+  return catalog.map((item) => ({
+    sourceId: item.sourceId,
+    title: item.title,
+    url: item.url,
+    snippet: item.snippet,
+    provider: item.provider,
   }));
+}
+
+function annotateCatalogWithFamily(catalog: GroundedCatalogItem[], family: string) {
+  return catalog.map((item) => ({
+    ...item,
+    snippet: [`Family: ${family}`, item.snippet ?? item.title].filter(Boolean).join(" | "),
+  }));
+}
+
+function buildPasses(agency: string, depth: IntelligenceDepth): QueryFamilyPass[] {
+  return [
+    {
+      family: "communication-and-professionalism",
+      prompt: [
+        `Search family: communication and professionalism for the real estate agency "${agency}" in Australia.`,
+        "Focus on renter-facing review signals about communication quality, follow-up, professionalism, and general service handling.",
+        "Prioritize tenant reviews, complaint threads, tribunal-style discussion, and detailed public review pages. Avoid official agency websites, map listings, agent profile pages, and business directories.",
+        "Return only JSON.",
+        "summary must be under 140 characters.",
+        "highlights must be 2-4 short bullets under 80 characters each.",
+        "sentimentScore must be a number from 1 to 5.",
+        "commonComplaints must be 0-3 short phrases under 28 characters.",
+        "negotiationLeverage must be under 140 characters.",
+      ].join("\n"),
+    },
+    {
+      family: "maintenance-and-repairs",
+      prompt: [
+        `Search family: maintenance and repairs for the real estate agency "${agency}" in Australia.`,
+        "Focus on maintenance response, repairs, work orders, inspection follow-through, and tenant complaint themes related to property issues.",
+        "Prioritize tenant reviews, complaint threads, tribunal-style discussion, and detailed public review pages. Avoid official agency websites, map listings, agent profile pages, and business directories.",
+        "Return only JSON.",
+        "summary must be under 140 characters.",
+        "highlights must be 2-4 short bullets under 80 characters each.",
+        "sentimentScore must be a number from 1 to 5.",
+        "commonComplaints must be 0-3 short phrases under 28 characters.",
+        "negotiationLeverage must be under 140 characters.",
+      ].join("\n"),
+    },
+    {
+      family: "bond-fees-and-paperwork",
+      prompt: [
+        `Search family: bond, fees, and paperwork for the real estate agency "${agency}" in Australia.`,
+        "Focus on public renter complaints about bond handling, hidden fees, lease paperwork, documentation quality, and move-in or move-out disputes.",
+        "Prioritize tenant reviews, complaint threads, tribunal-style discussion, and detailed public review pages. Avoid official agency websites, map listings, agent profile pages, and business directories.",
+        "Return only JSON.",
+        "summary must be under 140 characters.",
+        "highlights must be 2-4 short bullets under 80 characters each.",
+        "sentimentScore must be a number from 1 to 5.",
+        "commonComplaints must be 0-3 short phrases under 28 characters.",
+        "negotiationLeverage must be under 140 characters.",
+      ].join("\n"),
+    },
+    ...(depth === "full"
+      ? [
+          {
+            family: "inspection-disputes-and-escalations",
+            prompt: [
+              `Search family: inspections, disputes, and escalations for the real estate agency "${agency}" in Australia.`,
+              "Focus on public warnings, dispute patterns, inspection conduct, condition report disputes, tribunal-style complaints, and repeated renter pain points.",
+              "Prioritize tenant reviews, complaint threads, tribunal-style discussion, and detailed public review pages. Avoid official agency websites, map listings, agent profile pages, and business directories.",
+              "Return only JSON.",
+              "summary must be under 140 characters.",
+              "highlights must be 2-4 short bullets under 80 characters each.",
+              "sentimentScore must be a number from 1 to 5.",
+              "commonComplaints must be 0-3 short phrases under 28 characters.",
+              "negotiationLeverage must be under 140 characters.",
+            ].join("\n"),
+          },
+        ]
+      : []),
+  ];
 }
 
 export async function analyzeAgencyBackground(args: {
   agency?: string;
   depth: IntelligenceDepth;
 }) {
-  const searchTimeoutMs = args.depth === "full" ? 8_000 : 5_000;
-  const geminiTimeoutMs = args.depth === "full" ? 4_500 : 3_500;
+  const searchTimeoutMs = args.depth === "full" ? 12_000 : 8_000;
+  const synthTimeoutMs = args.depth === "full" ? 7_500 : 5_500;
   const agency = args.agency?.trim();
   if (!agency) {
     return {
@@ -31,98 +188,101 @@ export async function analyzeAgencyBackground(args: {
     };
   }
 
-  const tavily = getTavilyClient();
-  if (!tavily) {
-    return {
-      agencyBackground: buildAgencyFallback({ agency, reason: "Search provider not configured." }),
-      fallbackReason: "tavily_unconfigured",
-      provider: "fallback",
-    };
-  }
-
   try {
-    const search = await withTimeout(
-      () =>
-        tavily.search(`${agency} property manager reviews complaints maintenance Australia`, {
-          topic: "general",
-          searchDepth: args.depth === "full" ? "advanced" : "fast",
-          maxResults: args.depth === "full" ? 6 : 4,
-          includeRawContent: "markdown",
-        }),
-      searchTimeoutMs
+    const passResults = await Promise.allSettled(
+      buildPasses(agency, args.depth).map(({ family, prompt }) =>
+        callGeminiSearchGroundedJson({
+          model: appEnv.geminiGroundedModel,
+          schema: searchPassSchema,
+          timeoutMs: searchTimeoutMs,
+          prompt,
+        }).then((result) => ({
+          ...result,
+          catalog: annotateCatalogWithFamily(
+            result.catalog.filter((item) => item.sourceId.startsWith("web-")),
+            family
+          ),
+        }))
+      )
     );
 
-    const catalog = buildCatalog(search.results);
-    if (catalog.length === 0) {
+    const mergedCatalog = mergeCatalogs(
+      passResults.flatMap((result) => (result.status === "fulfilled" ? [result.value.catalog] : []))
+    );
+    const filteredCatalog = filterGroundedWebCatalog(mergedCatalog, {
+      channel: "agency",
+      context: [agency, "maintenance repairs bond lease inspection dispute communication"],
+      minScore: 4,
+    });
+
+    if (filteredCatalog.length === 0) {
       return {
-        agencyBackground: buildAgencyFallback({ agency, reason: "No public review results found." }),
-        fallbackReason: "agency_results_empty",
+        agencyBackground: buildAgencyFallback({
+          agency,
+          reason: "Google Search grounding returned no usable evidence.",
+        }),
+        fallbackReason: "agency_search_grounding_empty",
         provider: "fallback",
       };
     }
 
-    try {
-      const structured = await callGeminiJson({
-        model: appEnv.geminiGroundedModel,
-        schema: agencyBackgroundSchema,
-        timeoutMs: geminiTimeoutMs,
-        prompt: [
-          `Summarize public reputation signals for the agency "${agency}".`,
-          "Return only JSON.",
-          "agencyName must be a clean agency label, not a scraped directory fragment.",
-          "If possible, include a short renter-facing summary under 180 characters.",
-          "If possible, include 2-4 short highlights under 90 characters each.",
-          "commonComplaints must be 0-3 short phrases, each under 6 words.",
-          "negotiationLeverage must be 1-2 short renter-facing sentences, under 170 characters.",
-          "Do not include opening hours, review form text, rating widgets, or copied directory listings.",
-          "You must cite only from the provided source catalog, using exact sourceId, title, and url values.",
-          "Do not invent links.",
-          JSON.stringify({ sourceCatalog: catalog }, null, 2),
-        ].join("\n"),
-      });
+    const sourceCatalog = toSourceCatalog(filteredCatalog);
+    const structured = await callGeminiJson({
+      model: appEnv.geminiIntelligenceModel,
+      schema: agencyBackgroundSchema,
+      timeoutMs: synthTimeoutMs,
+      prompt: [
+        `Summarize public reputation signals for the real estate agency "${agency}" in Australia.`,
+        "You are synthesizing evidence from multiple Google Search grounded passes.",
+        "Prefer repeated or corroborated public themes over isolated comments.",
+        "Return only JSON.",
+        "agencyName must be the clean agency name.",
+        "summary must be under 180 characters and only about the named agency.",
+        "highlights must be 2-4 short bullets under 90 characters each.",
+        "commonComplaints must be 0-3 short phrases under 32 characters.",
+        "negotiationLeverage must be 1-2 short renter-facing sentences under 170 characters.",
+        "sentimentScore must be a number from 1 to 5.",
+        "Do not include opening hours, review widgets, or copied directory listings.",
+        "You must cite only from the provided source catalog, using exact sourceId, title, and url values.",
+        JSON.stringify({ sourceCatalog }, null, 2),
+      ].join("\n"),
+    });
 
-      return {
-        agencyBackground: {
-          ...structured,
-          agencyName: agency,
-          citations: sanitizeCitations(structured.citations, catalog),
-        } satisfies AgencyBackground,
-        provider: "gemini+tavily",
-      };
-    } catch {
-      const snippets = catalog.map((item) => item.snippet ?? "");
-      const sentimentScore = Math.max(1, Math.min(5, 3 + scoreSnippetSentiment(snippets) * 0.25));
-      const commonComplaints = deriveComplaints(snippets);
-
-      return {
-        agencyBackground: {
-          agencyName: agency,
-          summary:
-            commonComplaints.length > 0
-              ? `Public review signals are mixed. Document response times and repair commitments before signing.`
-              : "Public review data is limited, so written commitments matter more than verbal assurances.",
-          highlights: sanitizeCitations(
-            catalog.slice(0, 2).map(({ sourceId, title, url }) => ({ sourceId, title, url })),
-            catalog
-          ).map((citation) => citation.title),
-          sentimentScore,
-          commonComplaints,
-          negotiationLeverage:
-            commonComplaints.length > 0
-              ? `Use recent review themes as leverage: ${commonComplaints.slice(0, 2).join(", ")}.`
-              : "Public review data is limited. Ask for written repair and response-time commitments.",
-          citations: sanitizeCitations(
-            catalog.slice(0, 3).map(({ sourceId, title, url }) => ({ sourceId, title, url })),
-            catalog
-          ),
-        },
-        fallbackReason: "agency_gemini_failed",
-        provider: "tavily",
-      };
-    }
+    return {
+      agencyBackground: agencyBackgroundSchema.parse({
+        ...structured,
+        agencyName: agency,
+        summary: structured.summary
+          ? sanitizeDisplayText(structured.summary, {
+              maxLength: 180,
+              maxSegments: 2,
+              fallback: structured.summary,
+            })
+          : undefined,
+        highlights: sanitizeDisplayList(normalizeStringList(structured.highlights), {
+          maxItems: 4,
+          itemMaxLength: 90,
+        }),
+        sentimentScore: normalizeSentimentScore(structured.sentimentScore),
+        commonComplaints: sanitizeDisplayList(normalizeStringList(structured.commonComplaints), {
+          maxItems: 3,
+          itemMaxLength: 32,
+        }),
+        negotiationLeverage: sanitizeDisplayText(structured.negotiationLeverage, {
+          maxLength: 170,
+          maxSegments: 2,
+          fallback: structured.negotiationLeverage,
+        }),
+        citations: sanitizeCitations(
+          structured.citations,
+          rankCatalog(filteredCatalog, [agency, "real estate", "property management", "reviews", "complaints"], 3)
+        ),
+      } satisfies AgencyBackground),
+      provider: "gemini+google-search",
+    };
   } catch {
     return {
-      agencyBackground: buildAgencyFallback({ agency, reason: "Search request failed." }),
+      agencyBackground: buildAgencyFallback({ agency, reason: "Google Search grounding failed." }),
       fallbackReason: "agency_search_failed",
       provider: "fallback",
     };

@@ -123,6 +123,59 @@ export async function callGeminiGroundedJson<TSchema extends ZodTypeAny>(args: {
   };
 }
 
+export async function callGeminiSearchGroundedJson<TSchema extends ZodTypeAny>(args: {
+  model: string;
+  prompt: string;
+  schema: TSchema;
+  timeoutMs?: number;
+}) {
+  const client = getGeminiClient();
+  if (!client) {
+    throw new Error("Gemini is not configured.");
+  }
+
+  const response = await withTimeout(
+    () =>
+      client.models.generateContent({
+        model: args.model,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: [
+                  args.prompt,
+                  "Use Google Search grounding when external evidence is needed.",
+                  "Return only a JSON object that matches this schema.",
+                  JSON.stringify(createGeminiSchema(args.schema), null, 2),
+                ].join("\n"),
+              },
+            ],
+          },
+        ],
+        config: {
+          tools: [{ googleSearch: {} }],
+        },
+      }),
+    args.timeoutMs ?? 20_000
+  );
+
+  const rawText = response.text;
+  if (!rawText) {
+    throw new Error("Gemini returned an empty Google Search grounded response.");
+  }
+
+  const groundingMetadata = response.candidates?.[0]?.groundingMetadata;
+  const catalog = extractGroundedCatalog(groundingMetadata);
+
+  return {
+    data: args.schema.parse(JSON.parse(extractJsonText(rawText))),
+    groundingMetadata,
+    catalog,
+    citations: buildCitationsFromGroundedCatalog(catalog),
+  };
+}
+
 export function sanitizeCitations(
   citations: Array<{ sourceId: string; title: string; url: string }> | undefined,
   catalog: SourceCatalogItem[]

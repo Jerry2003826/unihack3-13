@@ -1,10 +1,22 @@
+import { z } from "zod";
 import type { CommunityInsight, IntelligenceDepth } from "@inspect-ai/contracts";
 import { communityInsightSchema, sanitizeDisplayList, sanitizeDisplayText } from "@inspect-ai/contracts";
-import { callGeminiJson, sanitizeCitations, type SourceCatalogItem } from "@/lib/ai";
+import { callGeminiJson, callGeminiSearchGroundedJson, sanitizeCitations, type SourceCatalogItem } from "@/lib/ai";
 import { appEnv } from "@/lib/env";
-import { buildCommunityFallback, scoreSnippetSentiment } from "@/lib/fallbacks";
-import { getTavilyClient } from "@/lib/providers/tavily";
-import { withTimeout } from "@/lib/http";
+import { buildCommunityFallback } from "@/lib/fallbacks";
+import { type GroundedCatalogItem } from "@/lib/grounding";
+import { filterGroundedWebCatalog } from "@/lib/search/relevance";
+
+const searchPassSchema = z.object({
+  summary: z.string().optional(),
+  highlights: z.union([z.array(z.string()).max(4), z.string()]).optional(),
+  sentiment: z.string().optional(),
+});
+
+interface QueryFamilyPass {
+  family: string;
+  prompt: string;
+}
 
 function buildLocationLabel(address?: string, coordinates?: { lat: number; lng: number }) {
   if (address?.trim()) {
@@ -18,36 +30,179 @@ function buildLocationLabel(address?: string, coordinates?: { lat: number; lng: 
   return "";
 }
 
-function buildCatalog(results: Array<{ title: string; url: string; content: string }>): SourceCatalogItem[] {
-  return results.map((result, index) => ({
-    sourceId: `community-${index + 1}`,
-    title: result.title,
-    url: result.url,
-    snippet: result.content,
-    provider: "tavily",
+function normalizeStringList(value: string[] | string | undefined) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split(/\n|•|;+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeCommunitySentiment(value: string | undefined): CommunityInsight["sentiment"] {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) {
+    return "unknown";
+  }
+  if (normalized.includes("positive")) return "positive";
+  if (normalized.includes("negative")) return "negative";
+  if (normalized.includes("mixed")) return "mixed";
+  if (normalized.includes("neutral")) return "neutral";
+  return "unknown";
+}
+
+function tokenize(value?: string) {
+  return [...new Set((value ?? "").toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length >= 4))];
+}
+
+function rankCatalog(catalog: GroundedCatalogItem[], queries: string[], limit: number) {
+  const tokens = queries.flatMap((query) => tokenize(query));
+  if (tokens.length === 0) {
+    return catalog.slice(0, limit);
+  }
+
+  const ranked = catalog
+    .map((item) => {
+      const haystack = `${item.title} ${item.url} ${item.snippet ?? ""}`.toLowerCase();
+      const score = tokens.reduce((total, token) => total + (haystack.includes(token) ? 1 : 0), 0);
+      return { item, score };
+    })
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => right.score - left.score);
+
+  return (ranked.length > 0 ? ranked.map((entry) => entry.item) : catalog).slice(0, limit);
+}
+
+function mergeCatalogs(catalogs: GroundedCatalogItem[][]) {
+  const merged: GroundedCatalogItem[] = [];
+  const seen = new Set<string>();
+
+  for (const catalog of catalogs) {
+    for (const item of catalog) {
+      const key = `${item.title}::${item.url}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      merged.push({
+        ...item,
+        sourceId: `community-${merged.length + 1}`,
+      });
+    }
+  }
+
+  return merged;
+}
+
+function toSourceCatalog(catalog: GroundedCatalogItem[]): SourceCatalogItem[] {
+  return catalog.map((item) => ({
+    sourceId: item.sourceId,
+    title: item.title,
+    url: item.url,
+    snippet: item.snippet,
+    provider: item.provider,
   }));
 }
 
-function buildFallbackCommunitySummary(args: {
-  address?: string;
-  titles: string[];
-  snippets: string[];
-}) {
-  const titleHighlights = sanitizeDisplayList(args.titles, { maxItems: 2, itemMaxLength: 72 });
-  const snippetSummary = sanitizeDisplayText(args.snippets.join(" "), {
-    maxLength: 180,
-    maxSegments: 2,
-  });
+function annotateCatalogWithFamily(catalog: GroundedCatalogItem[], family: string) {
+  return catalog.map((item) => ({
+    ...item,
+    snippet: [`Family: ${family}`, item.snippet ?? item.title].filter(Boolean).join(" | "),
+  }));
+}
 
-  if (titleHighlights.length > 0) {
-    return `Public discussion near ${args.address ?? "this property"} references ${titleHighlights.join(" and ")}. Treat this as incomplete and verify local street conditions in person.`;
-  }
-
-  if (snippetSummary) {
-    return `${snippetSummary} Verify noise, traffic, and street activity in person before signing.`;
-  }
-
-  return buildCommunityFallback({ address: args.address }).summary;
+function buildPasses(
+  locationLabel: string,
+  propertyNotes: string | undefined,
+  depth: IntelligenceDepth
+): QueryFamilyPass[] {
+  return [
+    {
+      family: "noise-and-traffic",
+      prompt: [
+        `Search family: noise and traffic for "${locationLabel}".`,
+        "Look for renter-relevant signals about road noise, peak-hour congestion, tram or train noise, bus activity, and traffic spillover.",
+        "Prioritize forum threads, community discussion, local news, and complaint-style pages. Avoid map listings, business directories, opening-hours pages, and transit stop cards.",
+        propertyNotes ? `Property notes: ${propertyNotes}` : "",
+        "Return only JSON.",
+        "summary must be under 140 characters.",
+        "highlights must be 2-4 short bullets under 80 characters each.",
+        "sentiment must be one of: positive, neutral, mixed, negative, unknown.",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    },
+    {
+      family: "construction-and-disruption",
+      prompt: [
+        `Search family: construction and disruption for "${locationLabel}".`,
+        "Look for roadworks, nearby construction, industrial disturbance, access issues, dust, or recurring disruption relevant to renters.",
+        "Prioritize local news, council notices, forum discussion, and complaint-style pages. Avoid map listings, business directories, opening-hours pages, and generic place cards.",
+        propertyNotes ? `Property notes: ${propertyNotes}` : "",
+        "Return only JSON.",
+        "summary must be under 140 characters.",
+        "highlights must be 2-4 short bullets under 80 characters each.",
+        "sentiment must be one of: positive, neutral, mixed, negative, unknown.",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    },
+    {
+      family: "safety-and-after-hours",
+      prompt: [
+        `Search family: safety and after-hours activity for "${locationLabel}".`,
+        "Look for renter-relevant signals about late-night activity, street lighting, antisocial behaviour, and after-hours comfort returning home.",
+        "Prioritize community discussion, local news, renter forums, and complaint-style pages. Avoid map listings, business directories, opening-hours pages, and transit stop cards.",
+        propertyNotes ? `Property notes: ${propertyNotes}` : "",
+        "Return only JSON.",
+        "summary must be under 140 characters.",
+        "highlights must be 2-4 short bullets under 80 characters each.",
+        "sentiment must be one of: positive, neutral, mixed, negative, unknown.",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    },
+    ...(depth === "full"
+      ? [
+          {
+            family: "renter-forums-and-building-chat",
+            prompt: [
+              `Search family: renter forums and building chat for "${locationLabel}".`,
+              "Look for forum-style renter discussion, apartment living feedback, building complaints, neighbour noise, and repeated tenant warnings.",
+              "Prioritize forum threads, Reddit-style discussion, complaint pages, and resident conversations. Avoid map listings, business directories, opening-hours pages, and generic place cards.",
+              propertyNotes ? `Property notes: ${propertyNotes}` : "",
+              "Return only JSON.",
+              "summary must be under 140 characters.",
+              "highlights must be 2-4 short bullets under 80 characters each.",
+              "sentiment must be one of: positive, neutral, mixed, negative, unknown.",
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          },
+          {
+            family: "street-liveability-and-parking",
+            prompt: [
+              `Search family: street liveability and parking for "${locationLabel}".`,
+              "Look for renter-relevant comments about walkability, parking pressure, daily convenience, and whether the street feels easy or frustrating to live on.",
+              "Prioritize community discussion, resident feedback, local news, and complaint-style pages. Avoid map listings, business directories, opening-hours pages, and generic place cards.",
+              propertyNotes ? `Property notes: ${propertyNotes}` : "",
+              "Return only JSON.",
+              "summary must be under 140 characters.",
+              "highlights must be 2-4 short bullets under 80 characters each.",
+              "sentiment must be one of: positive, neutral, mixed, negative, unknown.",
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          },
+        ]
+      : []),
+  ];
 }
 
 export async function researchCommunity(args: {
@@ -56,8 +211,8 @@ export async function researchCommunity(args: {
   propertyNotes?: string;
   depth: IntelligenceDepth;
 }) {
-  const searchTimeoutMs = args.depth === "full" ? 9_000 : 6_000;
-  const geminiTimeoutMs = args.depth === "full" ? 4_500 : 3_500;
+  const searchTimeoutMs = args.depth === "full" ? 12_000 : 8_000;
+  const synthTimeoutMs = args.depth === "full" ? 7_500 : 5_500;
   const locationLabel = buildLocationLabel(args.address, args.coordinates);
   if (!locationLabel) {
     return {
@@ -67,112 +222,92 @@ export async function researchCommunity(args: {
     };
   }
 
-  const tavily = getTavilyClient();
-  if (!tavily) {
-    return {
-      communityInsight: buildCommunityFallback({
-        address: args.address,
-        reason: "Search provider not configured.",
-      }),
-      fallbackReason: "tavily_unconfigured",
-      provider: "fallback",
-    };
-  }
-
   try {
-    const search = await withTimeout(
-      () =>
-        tavily.search(
-          `${locationLabel} renters forum review noise traffic safety construction public transport ${args.propertyNotes ?? ""}`.trim(),
-          {
-            topic: "general",
-            searchDepth: args.depth === "full" ? "advanced" : "fast",
-            maxResults: args.depth === "full" ? 8 : 5,
-            includeRawContent: "markdown",
-          }
-        ),
-      searchTimeoutMs
+    const passResults = await Promise.allSettled(
+      buildPasses(locationLabel, args.propertyNotes, args.depth).map(({ family, prompt }) =>
+        callGeminiSearchGroundedJson({
+          model: appEnv.geminiGroundedModel,
+          schema: searchPassSchema,
+          timeoutMs: searchTimeoutMs,
+          prompt,
+        }).then((result) => ({
+          ...result,
+          catalog: annotateCatalogWithFamily(
+            result.catalog.filter((item) => item.sourceId.startsWith("web-")),
+            family
+          ),
+        }))
+      )
     );
 
-    const catalog = buildCatalog(search.results);
-    if (catalog.length === 0) {
+    const mergedCatalog = mergeCatalogs(
+      passResults.flatMap((result) => (result.status === "fulfilled" ? [result.value.catalog] : []))
+    );
+    const filteredCatalog = filterGroundedWebCatalog(mergedCatalog, {
+      channel: "community",
+      context: [locationLabel, args.propertyNotes ?? "", "renters noise traffic safety construction parking"],
+      minScore: 4,
+    });
+
+    if (filteredCatalog.length === 0) {
       return {
         communityInsight: buildCommunityFallback({
           address: args.address,
-          reason: "No public community results found.",
+          reason: "Google Search grounding returned no usable evidence.",
         }),
-        fallbackReason: "community_results_empty",
+        fallbackReason: "community_search_grounding_empty",
         provider: "fallback",
       };
     }
 
-    try {
-      const structured = await callGeminiJson({
-        model: appEnv.geminiGroundedModel,
-        schema: communityInsightSchema,
-        timeoutMs: geminiTimeoutMs,
-        prompt: [
-          `Summarize public rental-living signals for "${locationLabel}".`,
-          "Differentiate between factual signals and subjective opinions.",
-          "Return only JSON.",
-          "The summary must be renter-facing, concise, and readable in 1-2 sentences.",
-          "Keep summary under 220 characters.",
-          "If possible, include 2-4 short highlights under 90 characters each.",
-          "Do not include review widgets, business directory fragments, opening hours, rating controls, or raw scraped page text.",
-          "Do not list more than one address unless it is directly relevant to the property being assessed.",
-          "You must cite only from the provided source catalog, using exact sourceId, title, and url values.",
-          JSON.stringify({ sourceCatalog: catalog }, null, 2),
-        ].join("\n"),
-      });
+    const sourceCatalog = toSourceCatalog(filteredCatalog);
+    const structured = await callGeminiJson({
+      model: appEnv.geminiIntelligenceModel,
+      schema: communityInsightSchema,
+      timeoutMs: synthTimeoutMs,
+      prompt: [
+        `Summarize public renter-relevant community signals for "${locationLabel}".`,
+        args.propertyNotes ? `Property notes: ${args.propertyNotes}` : "",
+        "You are synthesizing evidence from multiple Google Search grounded passes.",
+        "Prefer repeated or corroborated signals over one-off mentions.",
+        "Return only JSON.",
+        "summary must be renter-facing, concise, and readable in 1-2 short sentences.",
+        "Keep summary under 220 characters.",
+        "highlights must be 2-4 short bullets under 90 characters each.",
+        "sentiment must be one of: positive, neutral, mixed, negative, unknown.",
+        "Do not include opening hours, rating widgets, business directory fragments, or copied list pages.",
+        "You must cite only from the provided source catalog, using exact sourceId, title, and url values.",
+        JSON.stringify({ sourceCatalog }, null, 2),
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    });
 
-      return {
-        communityInsight: {
-          ...structured,
-          citations: sanitizeCitations(structured.citations, catalog),
-        } satisfies CommunityInsight,
-        provider: "gemini+tavily",
-      };
-    } catch {
-      const snippets = catalog.map((item) => item.snippet ?? "");
-      const sentimentScore = scoreSnippetSentiment(snippets);
-
-      return {
-        communityInsight: {
-          summary: buildFallbackCommunitySummary({
-            address: args.address,
-            titles: catalog.map((item) => item.title),
-            snippets,
-          }),
-          highlights: sanitizeDisplayList(
-            [
-              ...catalog.map((item) => item.title),
-              "Verify the street at peak traffic time",
-              "Cross-check local renter forums",
-            ],
-            { maxItems: 4, itemMaxLength: 90 }
-          ),
-          sentiment:
-            sentimentScore <= -3
-              ? "negative"
-              : sentimentScore < 0
-                ? "mixed"
-                : sentimentScore === 0
-                  ? "neutral"
-                  : "positive",
-          citations: sanitizeCitations(
-            catalog.slice(0, 4).map(({ sourceId, title, url }) => ({ sourceId, title, url })),
-            catalog
-          ),
-        },
-        fallbackReason: "community_gemini_failed",
-        provider: "tavily",
-      };
-    }
+    return {
+      communityInsight: communityInsightSchema.parse({
+        ...structured,
+        summary: sanitizeDisplayText(structured.summary, {
+          maxLength: 220,
+          maxSegments: 2,
+          fallback: structured.summary,
+        }),
+        highlights: sanitizeDisplayList(normalizeStringList(structured.highlights), {
+          maxItems: 4,
+          itemMaxLength: 90,
+        }),
+        sentiment: normalizeCommunitySentiment(structured.sentiment),
+        citations: sanitizeCitations(
+          structured.citations,
+          rankCatalog(filteredCatalog, [locationLabel, "renters", "noise", "traffic", "safety"], 4)
+        ),
+      }),
+      provider: "gemini+google-search",
+    };
   } catch {
     return {
       communityInsight: buildCommunityFallback({
         address: args.address,
-        reason: "Search request failed.",
+        reason: "Google Search grounding failed.",
       }),
       fallbackReason: "community_search_failed",
       provider: "fallback",

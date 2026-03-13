@@ -41,7 +41,7 @@ import { calculatePropertyRiskScore, getRiskDrivers } from "@/lib/scoring";
 import { getFilledInspectionChecklistSections } from "@/lib/inspectionChecklist";
 import { useHazardStore } from "@/store/useHazardStore";
 import { useSessionStore } from "@/store/useSessionStore";
-import { ArrowLeft, FileDown, FileImage, Loader2, ShieldAlert } from "lucide-react";
+import { ArrowLeft, FileDown, FileImage, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 
 const RECOMMENDATION_FALLBACK =
@@ -1137,9 +1137,94 @@ export default function ReportPage() {
             </CardContent>
           </Card>
 
+          <Card className="border-border/70 bg-card/85 xl:col-span-2">
+            <CardHeader>
+              <CardDescription>8. Map + Web Fusion</CardDescription>
+              <CardTitle>Combined signals from local map facts and public web evidence</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm text-muted-foreground">
+              {snapshot.intelligence?.fusion ? (
+                <>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="outline" className="border-border/70 text-foreground">
+                      Confidence: {snapshot.intelligence.fusion.confidence}
+                    </Badge>
+                    <Badge variant="outline" className="border-border/70 text-foreground">
+                      Map signals: {snapshot.intelligence.fusion.mapSignals.length}
+                    </Badge>
+                    <Badge variant="outline" className="border-border/70 text-foreground">
+                      Web signals: {snapshot.intelligence.fusion.webSignals.length}
+                    </Badge>
+                  </div>
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
+                      <div className="text-sm font-medium text-foreground">Map-grounded signals</div>
+                      <div className="space-y-3">
+                        {snapshot.intelligence.fusion.mapSignals.length > 0 ? (
+                          snapshot.intelligence.fusion.mapSignals.map((signal) => (
+                            <div key={`map-${signal.topic}-${signal.title}`} className="space-y-1">
+                              <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                                {signal.title}
+                              </div>
+                              <div className="text-sm text-foreground">{signal.summary}</div>
+                              {signal.highlights?.length ? (
+                                <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                                  {signal.highlights.map((item) => (
+                                    <li key={item}>{item}</li>
+                                  ))}
+                                </ul>
+                              ) : null}
+                            </div>
+                          ))
+                        ) : (
+                          <div>Map-grounded evidence is limited for this report.</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
+                      <div className="text-sm font-medium text-foreground">Web-grounded signals</div>
+                      <div className="space-y-3">
+                        {snapshot.intelligence.fusion.webSignals.length > 0 ? (
+                          snapshot.intelligence.fusion.webSignals.map((signal) => (
+                            <div key={`web-${signal.topic}-${signal.title}`} className="space-y-1">
+                              <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                                {signal.title}
+                              </div>
+                              <div className="text-sm text-foreground">{signal.summary}</div>
+                              {signal.highlights?.length ? (
+                                <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                                  {signal.highlights.map((item) => (
+                                    <li key={item}>{item}</li>
+                                  ))}
+                                </ul>
+                              ) : null}
+                            </div>
+                          ))
+                        ) : (
+                          <div>Public web evidence is limited for this report.</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  {snapshot.intelligence.fusion.conflicts.length > 0 ? (
+                    <ExpandableDetails label="Cross-source conflicts to verify">
+                      <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
+                        {snapshot.intelligence.fusion.conflicts.map((conflict) => (
+                          <li key={conflict}>{conflict}</li>
+                        ))}
+                      </ul>
+                    </ExpandableDetails>
+                  ) : null}
+                </>
+              ) : (
+                <ReportSectionSkeleton copy="Reconciling map and web signals..." className="lg:col-span-2" />
+              )}
+            </CardContent>
+          </Card>
+
           <Card className="border-border/70 bg-card/85">
             <CardHeader>
-              <CardDescription>8. Evidence & Confidence</CardDescription>
+              <CardDescription>9. Evidence & Confidence</CardDescription>
               <CardTitle>What currently supports the recommendation</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-muted-foreground">
@@ -1164,7 +1249,7 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85">
             <CardHeader>
-              <CardDescription>9. Inspection Coverage</CardDescription>
+              <CardDescription>10. Inspection Coverage</CardDescription>
               <CardTitle>How complete is the current inspection?</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 text-sm text-muted-foreground">
@@ -1206,7 +1291,7 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85 xl:col-span-2">
             <CardHeader>
-              <CardDescription>10. Pre-lease Action Guide</CardDescription>
+              <CardDescription>11. Pre-lease Action Guide</CardDescription>
               <CardTitle>What to negotiate or re-check next</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1249,7 +1334,7 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85 xl:col-span-2">
             <CardHeader>
-              <CardDescription>11. Inspection Checklist & Entry Notes</CardDescription>
+              <CardDescription>12. Inspection Checklist & Entry Notes</CardDescription>
               <CardTitle>Structured notes captured during the inspection</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1293,7 +1378,7 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85 xl:col-span-2">
             <CardHeader>
-              <CardDescription>12. Knowledge Base Guidance</CardDescription>
+              <CardDescription>13. Knowledge Base Guidance</CardDescription>
               <CardTitle>Extra renter guidance from the external knowledge base</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-3">
@@ -1319,7 +1404,7 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85 xl:col-span-2">
             <CardHeader>
-              <CardDescription>13. People & Paperwork Checks</CardDescription>
+              <CardDescription>14. People & Paperwork Checks</CardDescription>
               <CardTitle>Compliant due-diligence items before you commit</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 lg:grid-cols-2">
@@ -1348,7 +1433,7 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85 xl:col-span-2">
             <CardHeader>
-              <CardDescription>14. Export Actions</CardDescription>
+              <CardDescription>15. Export Actions</CardDescription>
               <CardTitle>Export a stable PDF or share poster</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-3">
@@ -1357,16 +1442,16 @@ export default function ReportPage() {
                 onClick={() => handleExport("pdf")}
                 disabled={!isReportStable || isExporting !== null}
               >
-                {isExporting === "pdf" ? <Loader2 className="mr-2 size-4 animate-spin" /> : <FileDown className="mr-2 size-4" />}
-                Export PDF
+                <FileDown className="mr-2 size-4" />
+                {isExporting === "pdf" ? "Exporting PDF..." : "Export PDF"}
               </Button>
               <Button
                 variant="outline"
                 onClick={() => handleExport("poster")}
                 disabled={!isReportStable || isExporting !== null}
               >
-                {isExporting === "poster" ? <Loader2 className="mr-2 size-4 animate-spin" /> : <FileImage className="mr-2 size-4" />}
-                Export Poster
+                <FileImage className="mr-2 size-4" />
+                {isExporting === "poster" ? "Exporting Poster..." : "Export Poster"}
               </Button>
               <div className="min-w-full text-xs text-muted-foreground">
                 {isReportStable

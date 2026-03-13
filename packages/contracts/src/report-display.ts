@@ -339,6 +339,49 @@ export function sanitizePropertyIntelligence(intelligence: PropertyIntelligence)
           }),
         }
       : undefined,
+    fusion: intelligence.fusion
+      ? {
+          mapSignals: intelligence.fusion.mapSignals.map((signal) => ({
+            ...signal,
+            title: sanitizeDisplayText(signal.title, {
+              maxLength: 56,
+              maxSegments: 1,
+              fallback: signal.title,
+            }),
+            summary: sanitizeDisplayText(signal.summary, {
+              maxLength: 180,
+              maxSegments: 2,
+              fallback: signal.summary,
+            }),
+            highlights: sanitizeDisplayList(signal.highlights, {
+              maxItems: 4,
+              itemMaxLength: 90,
+            }),
+          })),
+          webSignals: intelligence.fusion.webSignals.map((signal) => ({
+            ...signal,
+            title: sanitizeDisplayText(signal.title, {
+              maxLength: 56,
+              maxSegments: 1,
+              fallback: signal.title,
+            }),
+            summary: sanitizeDisplayText(signal.summary, {
+              maxLength: 180,
+              maxSegments: 2,
+              fallback: signal.summary,
+            }),
+            highlights: sanitizeDisplayList(signal.highlights, {
+              maxItems: 4,
+              itemMaxLength: 90,
+            }),
+          })),
+          conflicts: sanitizeDisplayList(intelligence.fusion.conflicts, {
+            maxItems: 4,
+            itemMaxLength: 120,
+          }),
+          confidence: intelligence.fusion.confidence,
+        }
+      : undefined,
   };
 }
 
