@@ -246,6 +246,7 @@ export default function ManualPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            inspectionId: activeInspectionId,
             source: "manual",
             objectKeys,
             roomType: "unknown",
@@ -314,6 +315,8 @@ export default function ManualPage() {
         hazards,
         intelligence,
         propertyRiskScore: calculatePropertyRiskScore(hazards),
+        exportAssets:
+          analysisResult.status === "fulfilled" ? analysisResult.value.exportAssets : undefined,
       };
 
       await saveReportSnapshot(nextSnapshot);

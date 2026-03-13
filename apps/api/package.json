@@ -12,6 +12,7 @@
     "@google/genai": "^1.45.0",
     "@inspect-ai/contracts": "workspace:*",
     "@tavily/core": "^0.7.2",
+    "jimp": "^1.6.0",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",

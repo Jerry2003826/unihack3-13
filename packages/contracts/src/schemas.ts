@@ -197,6 +197,7 @@ export const reportSnapshotSchema = z.object({
 export type ReportSnapshot = z.infer<typeof reportSnapshotSchema>;
 
 export const analyzeRequestSchema = z.object({
+  inspectionId: z.string().optional(),
   source: inspectionModeSchema,
   images: z.array(z.string()).optional(),
   objectKeys: z.array(z.string()).optional(),
@@ -207,6 +208,7 @@ export type AnalyzeRequest = z.infer<typeof analyzeRequestSchema>;
 
 export const analyzeResponseSchema = z.object({
   hazards: z.array(hazardSchema),
+  exportAssets: reportSnapshotSchema.shape.exportAssets.optional(),
 });
 export type AnalyzeResponse = z.infer<typeof analyzeResponseSchema>;
 

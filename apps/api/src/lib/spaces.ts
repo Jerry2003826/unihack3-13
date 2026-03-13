@@ -53,6 +53,11 @@ export function buildManualObjectKey(inspectionId: string, contentType: string) 
   return `raw/manual/${date}/${inspectionId}/${crypto.randomUUID()}.${extension}`;
 }
 
+export function buildDerivedThumbnailObjectKey(inspectionId: string, hazardId: string) {
+  const date = new Date().toISOString().slice(0, 10);
+  return `derived/manual/${date}/${inspectionId}/${hazardId}.jpg`;
+}
+
 export function createSignedObjectUrl(args: {
   method: "GET" | "PUT";
   objectKey: string;
@@ -111,6 +116,14 @@ export function createSignedObjectUrl(args: {
 }
 
 export async function fetchObjectAsBase64(objectKey: string) {
+  const { bytes, mimeType } = await fetchObjectBytes(objectKey);
+  return {
+    base64: bytes.toString("base64"),
+    mimeType,
+  };
+}
+
+export async function fetchObjectBytes(objectKey: string) {
   const signedUrl = createSignedObjectUrl({
     method: "GET",
     objectKey,
@@ -125,7 +138,36 @@ export async function fetchObjectAsBase64(objectKey: string) {
   const mimeType = response.headers.get("content-type") ?? "image/jpeg";
   const bytes = Buffer.from(await response.arrayBuffer());
   return {
-    base64: bytes.toString("base64"),
+    bytes,
     mimeType,
   };
+}
+
+export async function uploadObjectBytes(args: {
+  objectKey: string;
+  bytes: Buffer;
+  contentType: string;
+}) {
+  const signedUrl = createSignedObjectUrl({
+    method: "PUT",
+    objectKey: args.objectKey,
+    expiresInSeconds: 300,
+    contentType: args.contentType,
+  });
+
+  const response = await withTimeout(
+    () =>
+      fetch(signedUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": args.contentType,
+        },
+        body: new Uint8Array(args.bytes),
+      }),
+    10_000
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to upload object ${args.objectKey}: ${response.status}`);
+  }
 }

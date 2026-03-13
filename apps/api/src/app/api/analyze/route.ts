@@ -35,7 +35,7 @@ export async function POST(request: Request) {
   const parsed = analyzeRequestSchema.safeParse(body);
   if (!parsed.success) {
     return createJsonResponse(
-      analyzeResponseSchema.parse({ hazards: [] }),
+      analyzeResponseSchema.parse({ hazards: [], exportAssets: undefined }),
       {
         origin: cors.origin,
         requestId,
@@ -44,7 +44,11 @@ export async function POST(request: Request) {
     );
   }
 
-  const inspectionKey = request.headers.get("x-inspection-id") ?? parsed.data.objectKeys?.[0] ?? parsed.data.source;
+  const inspectionKey =
+    request.headers.get("x-inspection-id") ??
+    parsed.data.inspectionId ??
+    parsed.data.objectKeys?.[0] ??
+    parsed.data.source;
   const rateLimit = checkRateLimit({
     request,
     route: "/api/analyze",
@@ -53,7 +57,7 @@ export async function POST(request: Request) {
   });
 
   if (!rateLimit.allowed) {
-    return createJsonResponse(analyzeResponseSchema.parse({ hazards: [] }), {
+    return createJsonResponse(analyzeResponseSchema.parse({ hazards: [], exportAssets: undefined }), {
       origin: cors.origin,
       requestId,
       status: 200,
@@ -90,11 +94,17 @@ export async function POST(request: Request) {
       });
     }
 
-    return createJsonResponse(analyzeResponseSchema.parse({ hazards: result.hazards }), {
+    return createJsonResponse(
+      analyzeResponseSchema.parse({
+        hazards: result.hazards,
+        exportAssets: result.exportAssets,
+      }),
+      {
       origin: cors.origin,
       requestId,
       headers: createRateLimitHeaders(rateLimit),
-    });
+      }
+    );
   } catch (error) {
     logError({
       message: "Analyze route failed",
@@ -106,7 +116,7 @@ export async function POST(request: Request) {
       details: error instanceof Error ? error.message : String(error),
     });
 
-    return createJsonResponse(analyzeResponseSchema.parse({ hazards: [] }), {
+    return createJsonResponse(analyzeResponseSchema.parse({ hazards: [], exportAssets: undefined }), {
       origin: cors.origin,
       requestId,
       headers: createRateLimitHeaders(rateLimit),

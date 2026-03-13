@@ -7,6 +7,7 @@ import {
 import { callGeminiJson } from "@/lib/ai";
 import { appEnv } from "@/lib/env";
 import { dedupeHazards } from "@/lib/fallbacks";
+import { deriveHazardThumbnails } from "@/lib/vision/thumbnailService";
 import { fetchObjectAsBase64 } from "@/lib/spaces";
 
 function buildPrompt(request: AnalyzeRequest) {
@@ -76,14 +77,26 @@ export async function analyzePropertyImages(request: AnalyzeRequest) {
     );
 
     const deduped = request.source === "manual" ? dedupeHazards(hazards) : hazards;
+    const exportAssets = await deriveHazardThumbnails({
+      request,
+      hazards: deduped,
+    }).catch((error) => {
+      console.warn("Thumbnail derivation fallback", error);
+      return undefined;
+    });
+
     return {
-      hazards: analyzeResponseSchema.parse({ hazards: deduped }).hazards,
+      ...analyzeResponseSchema.parse({
+        hazards: deduped,
+        exportAssets,
+      }),
       provider: "gemini",
     };
   } catch (error) {
     console.warn("Gemini analyze fallback", error);
     return {
       hazards: [],
+      exportAssets: undefined,
       fallbackReason: "gemini_analyze_failed",
       provider: "fallback",
     };
