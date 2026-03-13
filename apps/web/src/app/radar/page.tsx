@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { RadarLoader } from "@/components/shared/RadarLoader";
 import { publicAppConfig } from "@/lib/config/public";
 import { useSessionStore } from "@/store/useSessionStore";
 import { getRadarTimeoutFallback, DEFAULT_DEMO_INTELLIGENCE } from "@/lib/constants/fallback";
 import { toast } from "sonner";
-import { motion } from "framer-motion";
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
@@ -14,7 +14,7 @@ function getErrorMessage(error: unknown): string {
 
 export default function RadarPage() {
   const router = useRouter();
-  const { address, agency, targetDestinations, preferenceProfile, isDemoMode, setIntelligence } = useSessionStore();
+  const { address, agency, coordinates, targetDestinations, preferenceProfile, isDemoMode, setIntelligence } = useSessionStore();
   
   const [statusText, setStatusText] = useState("Initializing scan...");
   const hasFetched = useRef(false);
@@ -68,6 +68,7 @@ export default function RadarPage() {
             depth: "fast",
             address,
             agency,
+            coordinates: coordinates || undefined,
             preferenceProfile,
             targetDestinations,
           }),
@@ -93,37 +94,13 @@ export default function RadarPage() {
     }
 
     fetchIntelligence();
-  }, [address, agency, isDemoMode, setIntelligence, targetDestinations, preferenceProfile, router]);
+  }, [address, agency, coordinates, isDemoMode, setIntelligence, targetDestinations, preferenceProfile, router]);
 
   return (
-    <div className="min-h-[100dvh] bg-background text-foreground flex flex-col items-center justify-center p-4">
-      <div className="relative flex items-center justify-center w-64 h-64 mb-8">
-        <motion.div
-           className="absolute w-full h-full rounded-full border-[1.5px] border-accent/20"
-           initial={{ scale: 0.5, opacity: 1 }}
-           animate={{ scale: 1.5, opacity: 0 }}
-           transition={{ duration: 2.5, repeat: Infinity, ease: "easeOut" }}
-        />
-        <motion.div
-           className="absolute w-full h-full rounded-full border-[1.5px] border-accent/40"
-           initial={{ scale: 0.5, opacity: 1 }}
-           animate={{ scale: 1.5, opacity: 0 }}
-           transition={{ duration: 2.5, delay: 0.8, repeat: Infinity, ease: "easeOut" }}
-        />
-        <motion.div
-           className="absolute w-full h-full rounded-full border-[1.5px] border-accent/60"
-           initial={{ scale: 0.5, opacity: 1 }}
-           animate={{ scale: 1.5, opacity: 0 }}
-           transition={{ duration: 2.5, delay: 1.6, repeat: Infinity, ease: "easeOut" }}
-        />
-        <div className="z-10 bg-card w-20 h-20 rounded-full flex items-center justify-center border border-accent/50 shadow-[0_0_20px_rgba(61,220,255,0.3)]">
-          <div className="w-5 h-5 rounded-full bg-accent animate-pulse" />
-        </div>
-      </div>
-      <h2 className="text-2xl font-semibold tracking-tight text-foreground">{statusText}</h2>
-      <p className="text-sm text-muted-foreground mt-3 text-center max-w-sm">
-        Checking local community feedback, transit, and agency background...
-      </p>
-    </div>
+    <RadarLoader
+      title="Property Radar"
+      statusText={statusText}
+      description="Checking local community feedback, transit, and agency background..."
+    />
   );
 }

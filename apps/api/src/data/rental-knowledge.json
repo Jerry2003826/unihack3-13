@@ -1,0 +1,50 @@
+[
+  {
+    "sourceId": "inspection-checklist-wet-areas",
+    "title": "Wet Area Inspection Checklist",
+    "tags": ["inspection", "mould", "plumbing", "checklist"],
+    "content": "Inspect bathroom vanity joins, shower screen seals, silicone edges, exhaust fan operation, laundry taps, and any musty smell near windows or ceiling corners. Ask for repair invoices and written drying or remediation records when mould or leaks are visible."
+  },
+  {
+    "sourceId": "lease-paperwork-core",
+    "title": "Lease Paperwork Essentials",
+    "tags": ["lease", "paperwork", "bond", "documents"],
+    "content": "Before signing, request the lease draft, condition report, bond lodgement process, emergency maintenance contact, and a written list of inclusions. Payment instructions should match the named landlord or licensed agency."
+  },
+  {
+    "sourceId": "negotiation-repairs",
+    "title": "Negotiating Repairs Before Lease Signing",
+    "tags": ["negotiation", "repairs", "email", "hazards"],
+    "content": "Use visible defects as leverage to request written repair dates, temporary rent relief, or an additional inspection before move-in. Keep the ask specific: issue, requested action, deadline, and what happens if the issue is unresolved."
+  },
+  {
+    "sourceId": "transit-noise-tradeoff",
+    "title": "Balancing Commute and Noise",
+    "tags": ["transit", "noise", "tradeoff", "location"],
+    "content": "Properties near arterial roads can improve commute times but increase nighttime noise. If commute is important, compare station access, bus frequency, and whether bedroom windows face the road or an internal courtyard."
+  },
+  {
+    "sourceId": "agency-red-flags",
+    "title": "Agency and Landlord Red Flags",
+    "tags": ["agency", "landlord", "red-flags", "paperwork"],
+    "content": "Treat verbal promises, missing paperwork, unusual payment requests, and reluctance to share a condition report as escalation points. Ask who holds the bond, how notices are served, and whether previous repair requests were resolved."
+  },
+  {
+    "sourceId": "lighting-checks",
+    "title": "Practical Lighting Checks for Renters",
+    "tags": ["lighting", "inspection", "windows"],
+    "content": "Check window size, direction, external obstructions, curtain thickness, and mould near frames. A room can photograph brightly but still feel dim if natural light is blocked for most of the day."
+  },
+  {
+    "sourceId": "budget-buffer",
+    "title": "Budget Buffer Guidance",
+    "tags": ["budget", "rent", "comparison"],
+    "content": "A rental at or below budget is not automatically the best option if repair risk is high. Keep room in your budget for move-in costs, higher utility usage, and extra inspection or cleaning work."
+  },
+  {
+    "sourceId": "shared-housing-checks",
+    "title": "People and Paperwork Checks for Shared Housing",
+    "tags": ["paperwork", "roommates", "identity", "income"],
+    "content": "For shared arrangements, confirm who is on the lease, how rent is split, how bills are handled, and what written evidence supports employment or income. Focus on documented arrangements rather than personal assumptions."
+  }
+]

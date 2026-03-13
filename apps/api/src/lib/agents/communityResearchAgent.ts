@@ -34,6 +34,8 @@ export async function researchCommunity(args: {
   propertyNotes?: string;
   depth: IntelligenceDepth;
 }) {
+  const searchTimeoutMs = args.depth === "full" ? 9_000 : 6_000;
+  const geminiTimeoutMs = args.depth === "full" ? 4_500 : 3_500;
   const locationLabel = buildLocationLabel(args.address, args.coordinates);
   if (!locationLabel) {
     return {
@@ -67,7 +69,7 @@ export async function researchCommunity(args: {
             includeRawContent: "markdown",
           }
         ),
-      18_000
+      searchTimeoutMs
     );
 
     const catalog = buildCatalog(search.results);
@@ -86,7 +88,7 @@ export async function researchCommunity(args: {
       const structured = await callGeminiJson({
         model: appEnv.geminiIntelligenceModel,
         schema: communityInsightSchema,
-        timeoutMs: 15_000,
+        timeoutMs: geminiTimeoutMs,
         prompt: [
           `Summarize public rental-living signals for "${locationLabel}".`,
           "Differentiate between factual signals and subjective opinions.",

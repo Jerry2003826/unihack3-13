@@ -11,6 +11,7 @@ import {
   getRequestId,
   readJsonBody,
 } from "@/lib/http";
+import { queryKnowledge } from "@/lib/knowledge/queryKnowledge";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { logInfo, logWarn } from "@/lib/telemetry";
 
@@ -85,13 +86,24 @@ export async function POST(request: Request) {
     intelligence: parsed.data.intelligence,
     inspectionMode: parsed.data.inspectionMode,
   });
+  const knowledgeMatches = queryKnowledge({
+    query: [
+      parsed.data.hazards.map((hazard) => `${hazard.category} ${hazard.description}`).join(" "),
+      parsed.data.intelligence?.geoAnalysis?.warning,
+      parsed.data.intelligence?.agencyBackground?.negotiationLeverage,
+    ]
+      .filter(Boolean)
+      .join(" "),
+    tags: ["negotiation", "repairs", "paperwork", "inspection"],
+    topK: 3,
+  });
   const startedAt = Date.now();
 
   try {
     const structured = await callGeminiJson({
       model: appEnv.geminiReasoningModel,
       schema: negotiateResponseSchema,
-      timeoutMs: 25_000,
+      timeoutMs: 8_000,
       prompt: [
         "You are a rental negotiation and pre-lease risk assistant.",
         "Return only JSON.",
@@ -104,6 +116,8 @@ export async function POST(request: Request) {
         "- evidence summary",
         "- inspection coverage",
         "- a pre-lease action guide",
+        "Use the knowledge snippets when they are relevant, but do not quote them verbatim.",
+        JSON.stringify({ knowledgeMatches }, null, 2),
         JSON.stringify(parsed.data, null, 2),
       ].join("\n"),
     });
@@ -112,6 +126,18 @@ export async function POST(request: Request) {
       ...fallback,
       ...structured,
     });
+
+    if (knowledgeMatches.length > 0) {
+      const knowledgePoints = knowledgeMatches.map((match) => `${match.title}: ${match.snippet}`);
+      responsePayload.keyPoints = [...responsePayload.keyPoints, ...knowledgePoints].slice(0, 6);
+      responsePayload.preLeaseActionGuide = {
+        ...responsePayload.preLeaseActionGuide,
+        furtherInspectionItems: [
+          ...responsePayload.preLeaseActionGuide.furtherInspectionItems,
+          ...knowledgeMatches.map((match) => match.title),
+        ].slice(0, 6),
+      };
+    }
 
     logInfo({
       message: "Negotiate route completed",

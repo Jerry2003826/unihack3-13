@@ -20,6 +20,8 @@ export async function analyzeAgencyBackground(args: {
   agency?: string;
   depth: IntelligenceDepth;
 }) {
+  const searchTimeoutMs = args.depth === "full" ? 8_000 : 5_000;
+  const geminiTimeoutMs = args.depth === "full" ? 4_500 : 3_500;
   const agency = args.agency?.trim();
   if (!agency) {
     return {
@@ -47,7 +49,7 @@ export async function analyzeAgencyBackground(args: {
           maxResults: args.depth === "full" ? 6 : 4,
           includeRawContent: "markdown",
         }),
-      15_000
+      searchTimeoutMs
     );
 
     const catalog = buildCatalog(search.results);
@@ -63,7 +65,7 @@ export async function analyzeAgencyBackground(args: {
       const structured = await callGeminiJson({
         model: appEnv.geminiIntelligenceModel,
         schema: agencyBackgroundSchema,
-        timeoutMs: 15_000,
+        timeoutMs: geminiTimeoutMs,
         prompt: [
           `Summarize public reputation signals for the agency "${agency}".`,
           "Return only JSON.",

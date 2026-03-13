@@ -97,6 +97,7 @@ export async function POST(request: Request) {
     return createJsonResponse(
       analyzeResponseSchema.parse({
         hazards: result.hazards,
+        lightingScoreAuto: result.lightingScoreAuto,
         exportAssets: result.exportAssets,
       }),
       {

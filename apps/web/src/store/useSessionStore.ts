@@ -17,6 +17,7 @@ interface BeginInspectionArgs {
   targetDestinations?: DestinationPoint[];
   preferenceProfile?: PreferenceProfile | null;
   propertyNotes?: string;
+  askingRent?: number | null;
 }
 
 interface ManualSubmissionContext {
@@ -34,6 +35,7 @@ interface SessionState {
   targetDestinations: DestinationPoint[];
   preferenceProfile: PreferenceProfile | null;
   propertyNotes: string;
+  askingRent: number | null;
   reportId: string | null;
   isDemoMode: boolean;
   intelligence: PropertyIntelligence | null;
@@ -61,6 +63,7 @@ export const useSessionStore = create<SessionState>()(
       targetDestinations: [],
       preferenceProfile: null,
       propertyNotes: "",
+      askingRent: null,
       reportId: null,
       isDemoMode: false,
       intelligence: null,
@@ -77,6 +80,7 @@ export const useSessionStore = create<SessionState>()(
           targetDestinations: args.targetDestinations || [],
           preferenceProfile: args.preferenceProfile || null,
           propertyNotes: args.propertyNotes || "",
+          askingRent: args.askingRent ?? null,
           reportId: null,
           intelligence: null,
           manualSubmissionContext: null,
@@ -92,6 +96,7 @@ export const useSessionStore = create<SessionState>()(
           targetDestinations: args.targetDestinations ?? state.targetDestinations,
           preferenceProfile: args.preferenceProfile === undefined ? state.preferenceProfile : args.preferenceProfile,
           propertyNotes: args.propertyNotes ?? state.propertyNotes,
+          askingRent: args.askingRent === undefined ? state.askingRent : args.askingRent,
         })),
 
       prepareManualMode: () =>
@@ -126,6 +131,13 @@ export const useSessionStore = create<SessionState>()(
       partialize: (state) => ({
         inspectionId: state.inspectionId,
         inspectionMode: state.inspectionMode,
+        address: state.address,
+        agency: state.agency,
+        coordinates: state.coordinates,
+        targetDestinations: state.targetDestinations,
+        preferenceProfile: state.preferenceProfile,
+        propertyNotes: state.propertyNotes,
+        askingRent: state.askingRent,
         reportId: state.reportId,
         isDemoMode: publicAppConfig.demoModeEnabled ? state.isDemoMode : false,
       }),

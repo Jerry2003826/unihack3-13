@@ -80,6 +80,14 @@ export async function getReportSnapshot(reportId: string): Promise<ReportSnapsho
   return (await db).get(SNAPSHOT_STORE, reportId);
 }
 
+export async function listReportSnapshots(limit = 12): Promise<ReportSnapshot[]> {
+  const db = getDB();
+  if (!db) return [];
+
+  const items = await (await db).getAllFromIndex(SNAPSHOT_STORE, "by-created-at");
+  return items.sort((left, right) => right.createdAt - left.createdAt).slice(0, limit);
+}
+
 export async function updateReportSnapshot(reportId: string, patch: Partial<ReportSnapshot>): Promise<void> {
   const db = getDB();
   if (!db) return;

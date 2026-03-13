@@ -7,23 +7,12 @@ import { geoAnalysisSchema } from "@inspect-ai/contracts";
 import { appEnv } from "@/lib/env";
 import { buildGeoFallback, scoreSnippetSentiment } from "@/lib/fallbacks";
 import { fetchJson } from "@/lib/http";
+import { geocodeAddress } from "@/lib/providers/googleMapsGeocode";
 import { getTavilyClient } from "@/lib/providers/tavily";
 
 interface Coordinates {
   lat: number;
   lng: number;
-}
-
-interface GeocodingResponse {
-  results?: Array<{
-    formatted_address?: string;
-    geometry?: {
-      location?: {
-        lat: number;
-        lng: number;
-      };
-    };
-  }>;
 }
 
 interface PlacesSearchResponse {
@@ -50,32 +39,6 @@ function parseDurationMinutes(duration?: string) {
   }
 
   return Math.max(1, Math.round(seconds / 60));
-}
-
-async function geocodeAddress(address: string) {
-  const apiKey = appEnv.googleMapsApiKey;
-  if (!apiKey) {
-    return null;
-  }
-
-  const query = new URL("https://maps.googleapis.com/maps/api/geocode/json");
-  query.searchParams.set("address", address);
-  query.searchParams.set("key", apiKey);
-
-  const response = await fetchJson<GeocodingResponse>(query, { timeoutMs: 8_000 });
-  const match = response.results?.[0];
-  const location = match?.geometry?.location;
-  if (!location) {
-    return null;
-  }
-
-  return {
-    coordinates: {
-      lat: location.lat,
-      lng: location.lng,
-    },
-    formattedAddress: match?.formatted_address ?? address,
-  };
 }
 
 async function searchNearbyTransit(coordinates: Coordinates) {

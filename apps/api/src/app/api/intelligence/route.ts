@@ -56,16 +56,6 @@ export async function POST(request: Request) {
     });
   }
 
-  if (parsed.data.inspectionMode === "live" && parsed.data.depth !== "fast") {
-    return createErrorResponse({
-      code: "invalid_depth",
-      message: 'Live inspections only support depth "fast".',
-      origin: cors.origin,
-      requestId,
-      status: 400,
-    });
-  }
-
   const rateLimit = checkRateLimit({
     request,
     route: "/api/intelligence",

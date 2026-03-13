@@ -4,27 +4,33 @@ import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import type {
+  AsyncStatus,
   EvidenceItem,
   Hazard,
   IntelligenceResponse,
+  KnowledgeQueryResponse,
   NegotiateResponse,
   ReportSnapshot,
   SignedAssetGetResponse,
   StaticMapResponse,
 } from "@inspect-ai/contracts";
 import {
+  knowledgeQueryResponseSchema,
   intelligenceResponseSchema,
   negotiateResponseSchema,
   reportSnapshotSchema,
   signedAssetGetResponseSchema,
   staticMapResponseSchema,
 } from "@inspect-ai/contracts";
+import { AsyncStatusBadge } from "@/components/shared/AsyncStatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { publicAppConfig } from "@/lib/config/public";
 import { exportReportPdf, exportReportPoster } from "@/lib/export/pdfGenerator";
+import { buildRecommendationFallbackBundle } from "@/lib/recommendationFallback";
+import { normalizeReportSnapshot } from "@/lib/report/normalizeReportSnapshot";
 import {
   getReportSnapshot,
   saveReportSnapshot,
@@ -36,10 +42,10 @@ import { useSessionStore } from "@/store/useSessionStore";
 import { ArrowLeft, FileDown, FileImage, Loader2, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 
-type AsyncStatus = "idle" | "loading" | "success" | "error";
-
 const RECOMMENDATION_FALLBACK =
   "Recommendation unavailable. Proceed with a standard inspection checklist before signing.";
+const RECOMMENDATION_FALLBACK_NOTICE =
+  "Recommendation fallback in use. Showing heuristic guidance because structured AI output was unavailable.";
 
 function isValidReportId(value: string) {
   return /^[a-zA-Z0-9-]{8,128}$/.test(value);
@@ -115,6 +121,7 @@ function buildRecoverySnapshot(reportId: string): ReportSnapshot | null {
     hazards,
     intelligence: session.intelligence || undefined,
     propertyRiskScore: calculatePropertyRiskScore(hazards),
+    askingRent: session.askingRent || undefined,
   });
 }
 
@@ -219,11 +226,18 @@ export default function ReportPage() {
   const [deepStatus, setDeepStatus] = useState<AsyncStatus>("idle");
   const [recommendationStatus, setRecommendationStatus] = useState<AsyncStatus>("idle");
   const [mapStatus, setMapStatus] = useState<AsyncStatus>("idle");
+  const [knowledgeStatus, setKnowledgeStatus] = useState<AsyncStatus>("idle");
   const [lazyError, setLazyError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState<"pdf" | "poster" | null>(null);
   const [signedThumbnailUrls, setSignedThumbnailUrls] = useState<Record<string, string>>({});
   const enrichmentStartedRef = useRef<string | null>(null);
+  const knowledgeStartedRef = useRef<string | null>(null);
+  const snapshotRef = useRef<ReportSnapshot | null>(null);
   const reportContentRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    snapshotRef.current = snapshot;
+  }, [snapshot]);
 
   useEffect(() => {
     if (!reportId || !isValidReportId(reportId)) {
@@ -242,30 +256,34 @@ export default function ReportPage() {
       }
 
       if (parsedStored?.success) {
-        const normalized = {
-          ...parsedStored.data,
-          propertyRiskScore: calculatePropertyRiskScore(parsedStored.data.hazards),
-        };
+        const normalized = normalizeReportSnapshot(parsedStored.data);
         setSnapshot(normalized);
         setDeepStatus(hasRecommendationBundle(normalized) ? "success" : "idle");
         setRecommendationStatus(hasRecommendationBundle(normalized) ? "success" : "idle");
         setMapStatus(normalized.exportAssets?.staticMapImageBase64 ? "success" : "idle");
+        setKnowledgeStatus(normalized.knowledgeMatches?.length ? "success" : "idle");
         setIsBooting(false);
 
-        if (normalized.propertyRiskScore !== parsedStored.data.propertyRiskScore) {
-          updateReportSnapshot(reportId, { propertyRiskScore: normalized.propertyRiskScore }).catch(console.error);
+        if (
+          normalized.propertyRiskScore !== parsedStored.data.propertyRiskScore ||
+          normalized.lightingScoreAuto !== parsedStored.data.lightingScoreAuto ||
+          normalized.comparisonEligible !== parsedStored.data.comparisonEligible ||
+          !parsedStored.data.paperworkChecks
+        ) {
+          updateReportSnapshot(reportId, normalized).catch(console.error);
         }
         return;
       }
 
       const recovered = buildRecoverySnapshot(reportId);
       if (recovered) {
-        await saveReportSnapshot(recovered);
+        const normalizedRecovered = normalizeReportSnapshot(recovered);
+        await saveReportSnapshot(normalizedRecovered);
         if (!isActive) {
           return;
         }
-        setSnapshot(recovered);
-        setMapStatus(recovered.exportAssets?.staticMapImageBase64 ? "success" : "idle");
+        setSnapshot(normalizedRecovered);
+        setMapStatus(normalizedRecovered.exportAssets?.staticMapImageBase64 ? "success" : "idle");
         setIsBooting(false);
         return;
       }
@@ -283,28 +301,52 @@ export default function ReportPage() {
   }, [reportId, router]);
 
   useEffect(() => {
-    if (!snapshot || isBooting || enrichmentStartedRef.current === snapshot.reportId || hasRecommendationBundle(snapshot)) {
+    const activeSnapshot = snapshotRef.current;
+    if (!activeSnapshot || isBooting || enrichmentStartedRef.current === activeSnapshot.reportId || hasRecommendationBundle(activeSnapshot)) {
       return;
     }
 
-    enrichmentStartedRef.current = snapshot.reportId;
+    enrichmentStartedRef.current = activeSnapshot.reportId;
     const controller = new AbortController();
-    const currentReportId = snapshot.reportId;
-    const currentSnapshot = snapshot;
+    const currentReportId = activeSnapshot.reportId;
+    const currentSnapshot = activeSnapshot;
 
     async function applyPatch(patch: Partial<ReportSnapshot>) {
+      let nextSnapshotForStore: ReportSnapshot | null = null;
       setSnapshot((current) => {
         if (!current) {
           return current;
         }
-        return reportSnapshotSchema.parse({
-          ...current,
-          ...patch,
-          propertyRiskScore:
-            patch.propertyRiskScore ?? calculatePropertyRiskScore(patch.hazards ?? current.hazards),
-        });
+        nextSnapshotForStore = normalizeReportSnapshot(
+          reportSnapshotSchema.parse({
+            ...current,
+            ...patch,
+            propertyRiskScore:
+              patch.propertyRiskScore ?? calculatePropertyRiskScore(patch.hazards ?? current.hazards),
+          })
+        );
+        return nextSnapshotForStore;
       });
-      await updateReportSnapshot(currentReportId, patch);
+      await updateReportSnapshot(currentReportId, nextSnapshotForStore ?? patch);
+    }
+
+    async function applyRecommendationFallback(
+      intelligence = currentSnapshot.intelligence
+    ) {
+      const fallbackBundle = buildRecommendationFallbackBundle({
+        hazards: currentSnapshot.hazards,
+        intelligence,
+        inspectionMode: currentSnapshot.inputs.mode,
+      });
+
+      await applyPatch({
+        intelligence,
+        recommendation: fallbackBundle.recommendation,
+        fitScore: fallbackBundle.fitScore,
+        evidenceSummary: fallbackBundle.evidenceSummary,
+        inspectionCoverage: fallbackBundle.inspectionCoverage,
+        preLeaseActionGuide: fallbackBundle.preLeaseActionGuide,
+      });
     }
 
     async function enrich() {
@@ -372,16 +414,18 @@ export default function ReportPage() {
         if (controller.signal.aborted) {
           return;
         }
-        setRecommendationStatus("error");
-        setLazyError(RECOMMENDATION_FALLBACK);
+        await applyRecommendationFallback(latestIntelligence ?? currentSnapshot.intelligence);
+        setRecommendationStatus("fallback");
+        setLazyError(RECOMMENDATION_FALLBACK_NOTICE);
         toast.warning(`Recommendation fallback in use: ${getErrorMessage(error)}`);
       }
     }
 
     enrich().catch((error) => {
       if (!controller.signal.aborted) {
-        setRecommendationStatus("error");
-        setLazyError(RECOMMENDATION_FALLBACK);
+        void applyRecommendationFallback(currentSnapshot.intelligence).catch(console.error);
+        setRecommendationStatus("fallback");
+        setLazyError(RECOMMENDATION_FALLBACK_NOTICE);
         console.error(error);
       }
     });
@@ -389,7 +433,7 @@ export default function ReportPage() {
     return () => {
       controller.abort();
     };
-  }, [isBooting, snapshot]);
+  }, [isBooting, snapshot?.reportId]);
 
   useEffect(() => {
     if (!snapshot) {
@@ -498,6 +542,64 @@ export default function ReportPage() {
     };
   }, [snapshot]);
 
+  useEffect(() => {
+    if (!snapshot || snapshot.knowledgeMatches?.length || knowledgeStartedRef.current === snapshot.reportId) {
+      return;
+    }
+
+    knowledgeStartedRef.current = snapshot.reportId;
+    const controller = new AbortController();
+    const currentSnapshot = snapshot;
+    setKnowledgeStatus("loading");
+
+    async function loadKnowledge() {
+      const response = await fetch(resolveApiUrl("/api/knowledge/query"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: [
+            currentSnapshot.inputs.address,
+            currentSnapshot.hazards.map((hazard) => `${hazard.category} ${hazard.description}`).join(" "),
+            currentSnapshot.recommendation?.summary,
+            currentSnapshot.intelligence?.agencyBackground?.negotiationLeverage,
+          ]
+            .filter(Boolean)
+            .join(" "),
+          tags: ["inspection", "negotiation", "paperwork", "lighting"],
+          topK: 4,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Knowledge query failed with ${response.status}`);
+      }
+
+      const payload: KnowledgeQueryResponse = knowledgeQueryResponseSchema.parse(await response.json());
+      const nextStatus: AsyncStatus = payload.matches.length > 0 ? "success" : "fallback";
+      setKnowledgeStatus(nextStatus);
+      const nextSnapshot = normalizeReportSnapshot(
+        reportSnapshotSchema.parse({
+          ...currentSnapshot,
+          knowledgeMatches: payload.matches,
+        })
+      );
+      setSnapshot(nextSnapshot);
+      await updateReportSnapshot(currentSnapshot.reportId, nextSnapshot);
+    }
+
+    loadKnowledge().catch((error) => {
+      if (!controller.signal.aborted) {
+        setKnowledgeStatus("fallback");
+        console.warn("Knowledge query failed", error);
+      }
+    });
+
+    return () => {
+      controller.abort();
+    };
+  }, [snapshot]);
+
   const riskState = useMemo(() => {
     if (!snapshot) {
       return null;
@@ -511,7 +613,8 @@ export default function ReportPage() {
   }
 
   const severityBreakdown = riskState.breakdown;
-  const isReportStable = deepStatus !== "loading" && recommendationStatus !== "loading" && !isBooting;
+  const isReportStable =
+    deepStatus !== "loading" && recommendationStatus !== "loading" && knowledgeStatus !== "loading" && !isBooting;
 
   async function handleExport(type: "pdf" | "poster") {
     if (!snapshot || !reportContentRef.current) {
@@ -543,10 +646,18 @@ export default function ReportPage() {
       <div ref={reportContentRef} className="mx-auto flex max-w-6xl flex-col gap-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-3">
-            <Button variant="ghost" size="sm" onClick={() => router.push("/")} data-export-ignore="true">
-              <ArrowLeft className="mr-1 size-4" />
-              Back Home
-            </Button>
+            <div className="flex flex-wrap gap-2" data-export-ignore="true">
+              <Button variant="ghost" size="sm" onClick={() => router.push("/")}>
+                <ArrowLeft className="mr-1 size-4" />
+                Back Home
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => router.push("/compare")}>
+                Saved Reports / Compare
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => router.push("/history")}>
+                Search History
+              </Button>
+            </div>
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge className="bg-accent/15 text-accent">Report Snapshot</Badge>
@@ -570,14 +681,9 @@ export default function ReportPage() {
             data-export-ignore="true"
             className="flex flex-col items-start gap-2 rounded-2xl border border-border/70 bg-card/70 px-4 py-3 text-sm text-muted-foreground"
           >
-            <div className="flex items-center gap-2">
-              {deepStatus === "loading" ? <Loader2 className="size-4 animate-spin text-accent" /> : null}
-              Deep intelligence: {deepStatus}
-            </div>
-            <div className="flex items-center gap-2">
-              {recommendationStatus === "loading" ? <Loader2 className="size-4 animate-spin text-accent" /> : null}
-              Recommendation: {recommendationStatus}
-            </div>
+            <AsyncStatusBadge label="Deep intelligence" status={deepStatus} />
+            <AsyncStatusBadge label="Recommendation" status={recommendationStatus} />
+            <AsyncStatusBadge label="Knowledge" status={knowledgeStatus} />
           </div>
         </div>
 
@@ -941,7 +1047,62 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85 xl:col-span-2">
             <CardHeader>
-              <CardDescription>11. Export Actions</CardDescription>
+              <CardDescription>11. Knowledge Base Guidance</CardDescription>
+              <CardTitle>Extra renter guidance from the external knowledge base</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              {snapshot.knowledgeMatches?.length ? (
+                snapshot.knowledgeMatches.map((match) => (
+                  <div key={match.sourceId} className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                    <div className="text-sm font-medium text-foreground">{match.title}</div>
+                    <div className="mt-2 text-sm text-muted-foreground">{match.snippet}</div>
+                    <div className="mt-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                      {match.tags.join(" · ")}
+                    </div>
+                  </div>
+                ))
+              ) : knowledgeStatus === "loading" ? (
+                <ReportSectionSkeleton copy="Querying renter knowledge base..." className="lg:col-span-2" />
+              ) : (
+                <div className="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
+                  Knowledge guidance is limited for this report. Use the action guide and paperwork checks as the minimum next steps.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70 bg-card/85 xl:col-span-2">
+            <CardHeader>
+              <CardDescription>12. People & Paperwork Checks</CardDescription>
+              <CardTitle>Compliant due-diligence items before you commit</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-4 lg:grid-cols-2">
+              <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
+                <div className="text-sm font-medium text-foreground">Checklist</div>
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  {snapshot.paperworkChecks?.checklist.map((item) => <div key={item}>{item}</div>)}
+                </div>
+              </div>
+              <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
+                <div className="text-sm font-medium text-foreground">Risk Flags</div>
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  {snapshot.paperworkChecks?.riskFlags.length ? (
+                    snapshot.paperworkChecks.riskFlags.map((item) => <div key={item}>{item}</div>)
+                  ) : (
+                    <div>No extra paperwork red flags were identified from the current snapshot.</div>
+                  )}
+                </div>
+                <div className="pt-2 text-sm font-medium text-foreground">Required Documents</div>
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  {snapshot.paperworkChecks?.requiredDocuments.map((item) => <div key={item}>{item}</div>)}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70 bg-card/85 xl:col-span-2">
+            <CardHeader>
+              <CardDescription>13. Export Actions</CardDescription>
               <CardTitle>Export a stable PDF or share poster</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-3">

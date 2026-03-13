@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { APIProvider, Map, AdvancedMarker } from "@vis.gl/react-google-maps";
 import { publicAppConfig } from "@/lib/config/public";
 import type { GeoPoint } from "@inspect-ai/contracts";
@@ -22,12 +21,9 @@ interface MapClickEvent {
 const DEFAULT_CENTER = { lat: -37.8136, lng: 144.9631 }; // Melbourne
 
 export function ManualMapPicker({ onLocationSelect, initialLocation }: ManualMapPickerProps) {
-  const [markerPos, setMarkerPos] = useState<GeoPoint | null>(initialLocation || null);
-
   const handleMapClick = (e: MapClickEvent) => {
     if (e.detail.latLng) {
       const newPos = { lat: e.detail.latLng.lat, lng: e.detail.latLng.lng };
-      setMarkerPos(newPos);
       onLocationSelect(newPos);
     }
   };
@@ -55,7 +51,7 @@ export function ManualMapPicker({ onLocationSelect, initialLocation }: ManualMap
           disableDefaultUI={true}
           gestureHandling="greedy"
         >
-          {markerPos && <AdvancedMarker position={markerPos} />}
+          {initialLocation ? <AdvancedMarker position={initialLocation} /> : null}
         </Map>
       </APIProvider>
     </div>

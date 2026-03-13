@@ -8,6 +8,7 @@ import { useVoiceAlert } from "@/hooks/useVoiceAlert";
 import { useHazardStore } from "@/store/useHazardStore";
 import { useSessionStore } from "@/store/useSessionStore";
 import { saveReportSnapshot } from "@/lib/report-snapshot/reportSnapshotStore";
+import { normalizeReportSnapshot } from "@/lib/report/normalizeReportSnapshot";
 import { calculatePropertyRiskScore } from "@/lib/scoring";
 import { BoundingBoxOverlay } from "@/components/scanner/BoundingBoxOverlay";
 import { Button } from "@/components/ui/button";
@@ -102,9 +103,10 @@ export default function ScanPage() {
         hazards: [...hazardStore.hazards],
         intelligence: sessionStore.intelligence || undefined,
         propertyRiskScore: calculatePropertyRiskScore(hazardStore.hazards),
+        askingRent: sessionStore.askingRent || undefined,
       };
 
-      await saveReportSnapshot(newSnapshot);
+      await saveReportSnapshot(normalizeReportSnapshot(newSnapshot));
       setReportId(generatedReportId);
       toast.dismiss(toastId);
       router.replace(`/report/${generatedReportId}`);

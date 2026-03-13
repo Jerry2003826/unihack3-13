@@ -1,3 +1,4 @@
+import { estimateLightingScore } from "@inspect-ai/contracts";
 import type { AnalyzeRequest, Hazard } from "@inspect-ai/contracts";
 import {
   analyzeResponseSchema,
@@ -77,6 +78,10 @@ export async function analyzePropertyImages(request: AnalyzeRequest) {
     );
 
     const deduped = request.source === "manual" ? dedupeHazards(hazards) : hazards;
+    const lightingScoreAuto = estimateLightingScore({
+      hazards: deduped,
+      propertyNotes: request.context?.propertyNotes,
+    });
     const exportAssets = await deriveHazardThumbnails({
       request,
       hazards: deduped,
@@ -88,6 +93,7 @@ export async function analyzePropertyImages(request: AnalyzeRequest) {
     return {
       ...analyzeResponseSchema.parse({
         hazards: deduped,
+        lightingScoreAuto,
         exportAssets,
       }),
       provider: "gemini",
@@ -96,6 +102,7 @@ export async function analyzePropertyImages(request: AnalyzeRequest) {
     console.warn("Gemini analyze fallback", error);
     return {
       hazards: [],
+      lightingScoreAuto: undefined,
       exportAssets: undefined,
       fallbackReason: "gemini_analyze_failed",
       provider: "fallback",
