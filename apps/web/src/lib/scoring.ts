@@ -1,4 +1,11 @@
-import { formatRoomTypeLabel, type Hazard, type SeverityLevel } from "@inspect-ai/contracts";
+import {
+  calculatePropertyRiskScore as calculatePropertyRiskScoreBase,
+  formatRoomTypeLabel,
+  type Hazard,
+  type InspectionChecklist,
+  type InspectionMode,
+  type SeverityLevel,
+} from "@inspect-ai/contracts";
 
 const penaltyBySeverity: Record<SeverityLevel, number> = {
   Critical: 25,
@@ -7,11 +14,18 @@ const penaltyBySeverity: Record<SeverityLevel, number> = {
   Low: 3,
 };
 
-export function calculatePropertyRiskScore(hazards: Hazard[]) {
-  return Math.max(
-    0,
-    100 - hazards.reduce((sum, hazard) => sum + penaltyBySeverity[hazard.severity], 0)
-  );
+export function calculatePropertyRiskScore(
+  hazards: Hazard[],
+  options?: {
+    inspectionChecklist?: InspectionChecklist;
+    inspectionMode?: InspectionMode;
+  }
+) {
+  return calculatePropertyRiskScoreBase({
+    hazards,
+    inspectionChecklist: options?.inspectionChecklist,
+    inspectionMode: options?.inspectionMode,
+  });
 }
 
 export function getSeverityBreakdown(hazards: Hazard[]) {

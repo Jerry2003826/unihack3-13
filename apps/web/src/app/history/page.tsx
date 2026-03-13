@@ -43,13 +43,14 @@ export default function HistoryPage() {
 
     if (entry.type === "manual") {
       prepareManualMode();
-      updateInspectionDraft({
-        mode: "manual",
-        address: entry.payload.address,
-        agency: entry.payload.agency,
-        coordinates: entry.payload.coordinates,
-        propertyNotes: entry.payload.propertyNotes,
-        inspectionChecklist: entry.payload.inspectionChecklist,
+        updateInspectionDraft({
+          mode: "manual",
+          address: entry.payload.address,
+          agency: entry.payload.agency,
+          listingUrl: entry.payload.listingUrl,
+          coordinates: entry.payload.coordinates,
+          propertyNotes: entry.payload.propertyNotes,
+          inspectionChecklist: entry.payload.inspectionChecklist,
         preferenceProfile: entry.payload.preferenceProfile,
       });
       resetForNewInspection();
@@ -61,6 +62,7 @@ export default function HistoryPage() {
       mode: "live",
       address: entry.payload.address,
       agency: entry.payload.agency,
+      listingUrl: entry.payload.listingUrl,
       coordinates: entry.payload.coordinates ?? null,
       inspectionChecklist: entry.payload.inspectionChecklist,
       targetDestinations: entry.payload.targetDestinations,

@@ -2,17 +2,22 @@
 
 import type { InspectionChecklist } from "@inspect-ai/contracts";
 import { INSPECTION_CHECKLIST_SECTIONS, getInspectionChecklistFieldValue, updateInspectionChecklistField } from "@/lib/inspectionChecklist";
+import { Badge } from "@/components/ui/badge";
 
 interface InspectionChecklistEditorProps {
   value: InspectionChecklist | null;
   onChange: (value: InspectionChecklist) => void;
   compact?: boolean;
+  autoFilledFieldKeys?: string[];
+  onFieldEdit?: (fieldPath: string) => void;
 }
 
 export function InspectionChecklistEditor({
   value,
   onChange,
   compact = false,
+  autoFilledFieldKeys = [],
+  onFieldEdit,
 }: InspectionChecklistEditorProps) {
   return (
     <div className="space-y-3">
@@ -29,24 +34,33 @@ export function InspectionChecklistEditor({
 
               return (
                 <label key={field.key} className={`space-y-2 ${field.multiline ? "md:col-span-2" : ""}`}>
-                  <span className="text-sm font-medium text-foreground/90">{field.label}</span>
+                  <span className="flex items-center gap-2 text-sm font-medium text-foreground/90">
+                    <span>{field.label}</span>
+                    {autoFilledFieldKeys.includes(`${section.key}.${field.key}`) ? (
+                      <Badge variant="secondary" className="text-[10px] uppercase tracking-[0.14em]">
+                        AI
+                      </Badge>
+                    ) : null}
+                  </span>
                   {field.multiline ? (
                     <textarea
                       className="flex min-h-[88px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       placeholder={field.placeholder}
                       value={fieldValue}
-                      onChange={(event) =>
-                        onChange(updateInspectionChecklistField(value, section.key, field.key, event.target.value))
-                      }
+                      onChange={(event) => {
+                        onFieldEdit?.(`${section.key}.${field.key}`);
+                        onChange(updateInspectionChecklistField(value, section.key, field.key, event.target.value));
+                      }}
                     />
                   ) : (
                     <input
                       className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       placeholder={field.placeholder}
                       value={fieldValue}
-                      onChange={(event) =>
-                        onChange(updateInspectionChecklistField(value, section.key, field.key, event.target.value))
-                      }
+                      onChange={(event) => {
+                        onFieldEdit?.(`${section.key}.${field.key}`);
+                        onChange(updateInspectionChecklistField(value, section.key, field.key, event.target.value));
+                      }}
                     />
                   )}
                 </label>

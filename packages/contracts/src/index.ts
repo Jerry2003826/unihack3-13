@@ -3,3 +3,4 @@ export * from "./comparison";
 export * from "./lighting";
 export * from "./paperwork";
 export * from "./report-display";
+export * from "./scoring";

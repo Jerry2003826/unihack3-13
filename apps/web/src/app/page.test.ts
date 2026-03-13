@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   push: vi.fn(),
   requestCurrentLocation: vi.fn(),
   reverseGeocodeCoordinates: vi.fn(),
+  useChecklistPrefill: vi.fn(),
+  useListingDiscovery: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
 }));
@@ -22,6 +24,14 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/lib/location", () => ({
   requestCurrentLocation: mocks.requestCurrentLocation,
   reverseGeocodeCoordinates: mocks.reverseGeocodeCoordinates,
+}));
+
+vi.mock("@/hooks/useChecklistPrefill", () => ({
+  useChecklistPrefill: mocks.useChecklistPrefill,
+}));
+
+vi.mock("@/hooks/useListingDiscovery", () => ({
+  useListingDiscovery: mocks.useListingDiscovery,
 }));
 
 vi.mock("sonner", () => ({
@@ -41,14 +51,30 @@ describe("HomePage address interaction", () => {
     mocks.push.mockReset();
     mocks.requestCurrentLocation.mockReset();
     mocks.reverseGeocodeCoordinates.mockReset();
+    mocks.useChecklistPrefill.mockReset();
+    mocks.useListingDiscovery.mockReset();
     mocks.toastSuccess.mockReset();
     mocks.toastError.mockReset();
+    mocks.useChecklistPrefill.mockReturnValue({
+      status: "idle",
+      summary: "",
+      autoFilledFieldKeys: [],
+      markFieldAsManual: vi.fn(),
+      retry: vi.fn(),
+    });
+    mocks.useListingDiscovery.mockReturnValue({
+      status: "idle",
+      summary: "",
+      candidates: [],
+      retry: vi.fn(),
+    });
 
     useSessionStore.setState({
       inspectionId: null,
       inspectionMode: "live",
       address: "",
       agency: "",
+      listingUrl: "",
       coordinates: null,
       targetDestinations: [],
       preferenceProfile: null,
@@ -131,6 +157,7 @@ describe("HomePage address interaction", () => {
   it("shows a saved draft address summary on initial render", () => {
     useSessionStore.setState({
       address: "44 Wellington Rd, Clayton VIC 3168",
+      listingUrl: "",
       coordinates: { lat: -37.916, lng: 145.1491 },
     });
 

@@ -14,6 +14,7 @@ interface BeginInspectionArgs {
   mode: InspectionMode;
   address?: string;
   agency?: string;
+  listingUrl?: string;
   coordinates?: GeoPoint | null;
   targetDestinations?: DestinationPoint[];
   preferenceProfile?: PreferenceProfile | null;
@@ -33,6 +34,7 @@ interface SessionState {
   inspectionMode: InspectionMode;
   address: string;
   agency: string;
+  listingUrl: string;
   coordinates: GeoPoint | null;
   targetDestinations: DestinationPoint[];
   preferenceProfile: PreferenceProfile | null;
@@ -62,6 +64,7 @@ export const useSessionStore = create<SessionState>()(
       inspectionMode: "live",
       address: "",
       agency: "",
+      listingUrl: "",
       coordinates: null,
       targetDestinations: [],
       preferenceProfile: null,
@@ -80,6 +83,7 @@ export const useSessionStore = create<SessionState>()(
           inspectionMode: args.mode,
           address: args.address || "",
           agency: args.agency || "",
+          listingUrl: args.listingUrl || "",
           coordinates: args.coordinates || null,
           targetDestinations: args.targetDestinations || [],
           preferenceProfile: args.preferenceProfile || null,
@@ -97,6 +101,7 @@ export const useSessionStore = create<SessionState>()(
           inspectionMode: args.mode ?? state.inspectionMode,
           address: args.address ?? state.address,
           agency: args.agency ?? state.agency,
+          listingUrl: args.listingUrl ?? state.listingUrl,
           coordinates: args.coordinates === undefined ? state.coordinates : args.coordinates,
           targetDestinations: args.targetDestinations ?? state.targetDestinations,
           preferenceProfile: args.preferenceProfile === undefined ? state.preferenceProfile : args.preferenceProfile,
@@ -140,6 +145,7 @@ export const useSessionStore = create<SessionState>()(
         inspectionMode: state.inspectionMode,
         address: state.address,
         agency: state.agency,
+        listingUrl: state.listingUrl,
         coordinates: state.coordinates,
         targetDestinations: state.targetDestinations,
         preferenceProfile: state.preferenceProfile,

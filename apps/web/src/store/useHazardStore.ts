@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { Hazard, ScanPhase, BoundingBox } from "@inspect-ai/contracts";
+import type { Hazard, ScanPhase, BoundingBox, LiveObservation } from "@inspect-ai/contracts";
 
 interface HazardState {
   hazards: Hazard[];
@@ -8,6 +8,11 @@ interface HazardState {
   currentFrame: string | null;
   isAnalyzing: boolean;
   lastSpeechAt: number;
+  liveCandidates: LiveObservation[];
+  activeTargetId: string | null;
+  lastAlertKey: string | null;
+  lastConfirmedAt: number;
+  liveEvidenceFrames: Record<string, string>;
 
   // Actions
   addHazard: (hazard: Hazard) => boolean;
@@ -17,6 +22,11 @@ interface HazardState {
   setCurrentFrame: (frame: string | null) => void;
   setIsAnalyzing: (isAnalyzing: boolean) => void;
   setLastSpeechAt: (time: number) => void;
+  setLiveCandidates: (candidates: LiveObservation[]) => void;
+  setActiveTargetId: (targetId: string | null) => void;
+  setLastAlertKey: (alertKey: string | null) => void;
+  setLastConfirmedAt: (time: number) => void;
+  setLiveEvidenceFrame: (hazardId: string, frameDataUrl: string) => void;
 }
 
 function getBboxCenter(bbox?: BoundingBox) {
@@ -41,6 +51,11 @@ export const useHazardStore = create<HazardState>()(
       currentFrame: null,
       isAnalyzing: false,
       lastSpeechAt: 0,
+      liveCandidates: [],
+      activeTargetId: null,
+      lastAlertKey: null,
+      lastConfirmedAt: 0,
+      liveEvidenceFrames: {},
 
       addHazard: (newHazard) => {
         const { hazards } = get();
@@ -88,6 +103,11 @@ export const useHazardStore = create<HazardState>()(
           currentFrame: null,
           isAnalyzing: false,
           lastSpeechAt: 0,
+          liveCandidates: [],
+          activeTargetId: null,
+          lastAlertKey: null,
+          lastConfirmedAt: 0,
+          liveEvidenceFrames: {},
         }),
 
       resetForRescan: () =>
@@ -97,12 +117,28 @@ export const useHazardStore = create<HazardState>()(
           currentFrame: null,
           isAnalyzing: false,
           lastSpeechAt: 0,
+          liveCandidates: [],
+          activeTargetId: null,
+          lastAlertKey: null,
+          lastConfirmedAt: 0,
+          liveEvidenceFrames: {},
         }),
 
       setScanPhase: (scanPhase) => set({ scanPhase }),
       setCurrentFrame: (currentFrame) => set({ currentFrame }),
       setIsAnalyzing: (isAnalyzing) => set({ isAnalyzing }),
       setLastSpeechAt: (lastSpeechAt) => set({ lastSpeechAt }),
+      setLiveCandidates: (liveCandidates) => set({ liveCandidates }),
+      setActiveTargetId: (activeTargetId) => set({ activeTargetId }),
+      setLastAlertKey: (lastAlertKey) => set({ lastAlertKey }),
+      setLastConfirmedAt: (lastConfirmedAt) => set({ lastConfirmedAt }),
+      setLiveEvidenceFrame: (hazardId, frameDataUrl) =>
+        set((state) => ({
+          liveEvidenceFrames: {
+            ...state.liveEvidenceFrames,
+            [hazardId]: frameDataUrl,
+          },
+        })),
     }),
     {
       name: "inspect-hazard-storage",

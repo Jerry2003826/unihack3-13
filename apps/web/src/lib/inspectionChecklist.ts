@@ -1,7 +1,8 @@
-import type { InspectionChecklist } from "@inspect-ai/contracts";
+import type { InspectionChecklist, LiveChecklistCapture } from "@inspect-ai/contracts";
 
 type SectionValue = NonNullable<InspectionChecklist[keyof InspectionChecklist]>;
 type SectionKey = keyof InspectionChecklist;
+export type InspectionChecklistFieldPath = `${SectionKey}.${string}`;
 
 export interface InspectionChecklistFieldConfig {
   key: string;
@@ -165,6 +166,24 @@ export function updateInspectionChecklistField(
   return next;
 }
 
+export function setInspectionChecklistFieldValue(
+  current: InspectionChecklist | null | undefined,
+  sectionKey: SectionKey,
+  fieldKey: string,
+  value: string | string[]
+): InspectionChecklist {
+  const next = { ...(current ?? {}) } as InspectionChecklist;
+  const section = { ...((next[sectionKey] ?? {}) as SectionValue) } as Record<string, unknown>;
+  const field = INSPECTION_CHECKLIST_SECTIONS.find((candidate) => candidate.key === sectionKey)?.fields.find(
+    (candidate) => candidate.key === fieldKey
+  );
+
+  section[fieldKey] = field?.list ? (Array.isArray(value) ? value : parseList(value)) : Array.isArray(value) ? value.join("\n") : value;
+  next[sectionKey] = section as InspectionChecklist[SectionKey];
+
+  return next;
+}
+
 function stringifyValue(value: unknown) {
   if (Array.isArray(value)) {
     return value.join("\n");
@@ -180,6 +199,35 @@ export function getInspectionChecklistFieldValue(
 ) {
   const section = checklist?.[sectionKey] as Record<string, unknown> | undefined;
   return stringifyValue(section?.[fieldKey]);
+}
+
+export function parseInspectionChecklistFieldPath(path: string) {
+  const [sectionKey, fieldKey] = path.split(".");
+  if (!sectionKey || !fieldKey) {
+    return null;
+  }
+
+  const section = INSPECTION_CHECKLIST_SECTIONS.find((candidate) => candidate.key === sectionKey);
+  if (!section) {
+    return null;
+  }
+
+  const field = section.fields.find((candidate) => candidate.key === fieldKey);
+  if (!field) {
+    return null;
+  }
+
+  return {
+    sectionKey: section.key,
+    fieldKey: field.key,
+    field,
+  };
+}
+
+export function listInspectionChecklistFieldPaths(): InspectionChecklistFieldPath[] {
+  return INSPECTION_CHECKLIST_SECTIONS.flatMap((section) =>
+    section.fields.map((field) => `${section.key}.${field.key}` as InspectionChecklistFieldPath)
+  );
 }
 
 export function getFilledInspectionChecklistSections(checklist: InspectionChecklist | null | undefined) {
@@ -206,4 +254,41 @@ export function getFilledInspectionChecklistSections(checklist: InspectionCheckl
 
     return fields.length > 0 ? [{ title: section.title, description: section.description, fields }] : [];
   });
+}
+
+function splitChecklistListValue(value: string) {
+  return value
+    .split(/\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+export function applyLiveChecklistCapture(
+  checklist: InspectionChecklist | null | undefined,
+  capture: LiveChecklistCapture,
+  options?: { listMode?: boolean }
+) {
+  const next = { ...(checklist ?? {}) } as InspectionChecklist;
+  const section = { ...((next[capture.section] ?? {}) as SectionValue) } as Record<string, unknown>;
+  const currentValue = section[capture.field];
+
+  if (options?.listMode) {
+    const merged = new Set<string>([
+      ...splitChecklistListValue(Array.isArray(currentValue) ? currentValue.join("\n") : typeof currentValue === "string" ? currentValue : ""),
+      ...splitChecklistListValue(capture.value),
+    ]);
+    section[capture.field] = Array.from(merged);
+  } else {
+    const existingText =
+      Array.isArray(currentValue) ? currentValue.join("\n") : typeof currentValue === "string" ? currentValue.trim() : "";
+
+    if (existingText.length > 0 && existingText === capture.value.trim()) {
+      return next;
+    }
+
+    section[capture.field] = capture.value.trim();
+  }
+
+  next[capture.section] = section as InspectionChecklist[SectionKey];
+  return next;
 }

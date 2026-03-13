@@ -6,6 +6,9 @@ export type HazardCategory = z.infer<typeof hazardCategorySchema>;
 export const severityLevelSchema = z.enum(["Critical", "High", "Medium", "Low"]);
 export type SeverityLevel = z.infer<typeof severityLevelSchema>;
 
+export const confidenceLevelSchema = z.enum(["low", "medium", "high"]);
+export type ConfidenceLevel = z.infer<typeof confidenceLevelSchema>;
+
 export const noiseRiskSchema = z.enum(["Low", "Medium", "High"]);
 export type NoiseRisk = z.infer<typeof noiseRiskSchema>;
 
@@ -63,6 +66,12 @@ export type PreferenceProfile = z.infer<typeof preferenceProfileSchema>;
 export const scanPhaseSchema = z.enum(["idle", "starting", "scanning", "stopped", "error"]);
 export type ScanPhase = z.infer<typeof scanPhaseSchema>;
 
+export const liveScanPhaseSchema = z.enum(["overview", "focus"]);
+export type LiveScanPhase = z.infer<typeof liveScanPhaseSchema>;
+
+export const liveAttentionLevelSchema = z.enum(["ignore", "watch", "move-closer", "confirm"]);
+export type LiveAttentionLevel = z.infer<typeof liveAttentionLevelSchema>;
+
 export const boundingBoxSchema = z.object({
   x_min: z.number().min(0).max(1),
   y_min: z.number().min(0).max(1),
@@ -97,9 +106,31 @@ export const hazardSchema = hazardDraftSchema.extend({
   detectedAt: z.number(),
   sourceEventId: z.string().optional(),
   roomType: roomTypeSchema.optional(),
+  detectionMode: z.enum(["live-guided"]).optional(),
+  confirmedAt: z.number().optional(),
 });
 export type Hazard = z.infer<typeof hazardSchema>;
 export const hazardsArraySchema = z.array(hazardSchema);
+
+export const liveObservationSchema = z.object({
+  observationId: z.string(),
+  category: hazardCategorySchema,
+  severity: severityLevelSchema,
+  description: z.string(),
+  boundingBox: boundingBoxSchema,
+  confidence: confidenceLevelSchema,
+  attentionLevel: liveAttentionLevelSchema,
+  guidanceText: z.string(),
+});
+export type LiveObservation = z.infer<typeof liveObservationSchema>;
+
+export const liveTargetSchema = z.object({
+  observationId: z.string().optional(),
+  category: hazardCategorySchema.optional(),
+  boundingBox: boundingBoxSchema.optional(),
+  phase: liveScanPhaseSchema,
+});
+export type LiveTarget = z.infer<typeof liveTargetSchema>;
 
 export const destinationPointSchema = z.object({
   label: z.string(),
@@ -260,6 +291,46 @@ export const inspectionChecklistSchema = z.object({
 });
 export type InspectionChecklist = z.infer<typeof inspectionChecklistSchema>;
 
+export const inspectionChecklistSectionSchema = z.enum([
+  "utilities",
+  "security",
+  "noise",
+  "kitchenBathroom",
+  "livability",
+  "leaseCosts",
+  "buildingManagement",
+  "pestsHiddenIssues",
+  "entryCondition",
+]);
+export type InspectionChecklistSection = z.infer<typeof inspectionChecklistSectionSchema>;
+
+export const liveChecklistTargetSchema = z.object({
+  section: inspectionChecklistSectionSchema,
+  field: z.string(),
+  label: z.string(),
+  instructions: z.string(),
+  listMode: z.boolean().optional(),
+});
+export type LiveChecklistTarget = z.infer<typeof liveChecklistTargetSchema>;
+
+export const liveChecklistCaptureSchema = z.object({
+  section: inspectionChecklistSectionSchema,
+  field: z.string(),
+  value: z.string(),
+  confidence: confidenceLevelSchema,
+  summary: z.string().optional(),
+});
+export type LiveChecklistCapture = z.infer<typeof liveChecklistCaptureSchema>;
+
+export const liveCheckpointCoverageStatusSchema = z.enum(["not-visible", "partial", "covered"]);
+export type LiveCheckpointCoverageStatus = z.infer<typeof liveCheckpointCoverageStatusSchema>;
+
+export const liveCheckpointCoverageSchema = z.object({
+  status: liveCheckpointCoverageStatusSchema,
+  note: z.string().optional(),
+});
+export type LiveCheckpointCoverage = z.infer<typeof liveCheckpointCoverageSchema>;
+
 export const nearbyPlaceSchema = z.object({
   placeId: z.string().optional(),
   name: z.string(),
@@ -345,6 +416,7 @@ export const reportSnapshotSchema = z.object({
     mode: inspectionModeSchema,
     address: z.string().optional(),
     agency: z.string().optional(),
+    listingUrl: z.string().url().optional(),
     coordinates: geoPointSchema.optional(),
     propertyNotes: z.string().optional(),
     inspectionChecklist: inspectionChecklistSchema.optional(),
@@ -395,11 +467,32 @@ export const analyzeResponseSchema = z.object({
 });
 export type AnalyzeResponse = z.infer<typeof analyzeResponseSchema>;
 
+export const liveAnalyzeRequestSchema = z.object({
+  inspectionId: z.string(),
+  frameBase64: z.string(),
+  roomType: roomTypeSchema,
+  activeTarget: liveTargetSchema.optional(),
+  recentConfirmedIds: z.array(z.string()).optional(),
+  guidedCheckpoint: liveChecklistTargetSchema.optional(),
+});
+export type LiveAnalyzeRequest = z.infer<typeof liveAnalyzeRequestSchema>;
+
+export const liveAnalyzeResponseSchema = z.object({
+  observations: z.array(liveObservationSchema),
+  primaryTarget: liveTargetSchema.optional(),
+  alertText: z.string().optional(),
+  confirmedHazard: hazardSchema.optional(),
+  checkpointCapture: liveChecklistCaptureSchema.optional(),
+  checkpointCoverage: liveCheckpointCoverageSchema.optional(),
+});
+export type LiveAnalyzeResponse = z.infer<typeof liveAnalyzeResponseSchema>;
+
 export const intelligenceRequestSchema = z.object({
   inspectionMode: inspectionModeSchema,
   depth: intelligenceDepthSchema,
   address: z.string().optional(),
   agency: z.string().optional(),
+  listingUrl: z.string().url().optional(),
   coordinates: geoPointSchema.optional(),
   propertyNotes: z.string().optional(),
   preferenceProfile: preferenceProfileSchema.optional(),
@@ -418,6 +511,11 @@ export const negotiateRequestSchema = z.object({
   intelligence: propertyIntelligenceSchema.optional(),
   inspectionChecklist: inspectionChecklistSchema.optional(),
   preferenceProfile: preferenceProfileSchema.optional(),
+  listingUrl: z.string().url().optional(),
+  paperworkChecks: peoplePaperworkChecksSchema.optional(),
+  askingRent: z.number().positive().optional(),
+  lightingScoreAuto: z.number().min(0).max(100).optional(),
+  lightingScoreManual: z.number().min(0).max(100).optional(),
 });
 export type NegotiateRequest = z.infer<typeof negotiateRequestSchema>;
 
@@ -437,6 +535,23 @@ export const signedUploadItemSchema = z.object({
   objectKey: z.string(),
 });
 export type SignedUploadItem = z.infer<typeof signedUploadItemSchema>;
+
+export const ttsAlertRequestSchema = z.object({
+  inspectionId: z.string(),
+  text: z.string().min(1).max(240),
+  severity: severityLevelSchema,
+  alertKey: z.string().min(1).max(200),
+  locale: z.literal("en-AU").default("en-AU"),
+});
+export type TtsAlertRequest = z.infer<typeof ttsAlertRequestSchema>;
+
+export const ttsAlertResponseSchema = z.object({
+  provider: z.enum(["minimax", "fallback"]),
+  audioBase64: z.string().optional(),
+  mimeType: z.string().optional(),
+  cacheHit: z.boolean(),
+});
+export type TtsAlertResponse = z.infer<typeof ttsAlertResponseSchema>;
 
 export const signedUploadRequestSchema = z.object({
   inspectionId: z.string(),
@@ -503,6 +618,73 @@ export const reverseGeocodeResponseSchema = z.object({
   provider: z.enum(["google-geocoding", "fallback"]),
 });
 export type ReverseGeocodeResponse = z.infer<typeof reverseGeocodeResponseSchema>;
+
+export const checklistPrefillRequestSchema = z.object({
+  address: z.string().optional(),
+  agency: z.string().optional(),
+  listingUrl: z.string().url().optional(),
+  coordinates: geoPointSchema.optional(),
+  propertyNotes: z.string().optional(),
+});
+export type ChecklistPrefillRequest = z.infer<typeof checklistPrefillRequestSchema>;
+
+export const checklistPrefillResponseSchema = z.object({
+  checklist: inspectionChecklistSchema,
+  autoFilledFieldKeys: z.array(z.string()),
+  manualReviewFieldKeys: z.array(z.string()),
+  summary: z.string(),
+  provider: z.enum(["gemini+google", "fallback"]),
+});
+export type ChecklistPrefillResponse = z.infer<typeof checklistPrefillResponseSchema>;
+
+export const listingDiscoveryCandidateSchema = z.object({
+  url: z.string().url(),
+  title: z.string(),
+  reason: z.string(),
+  confidence: z.enum(["low", "medium", "high"]),
+});
+export type ListingDiscoveryCandidate = z.infer<typeof listingDiscoveryCandidateSchema>;
+
+export const listingDiscoverRequestSchema = z.object({
+  address: z.string().min(6),
+  agency: z.string().optional(),
+});
+export type ListingDiscoverRequest = z.infer<typeof listingDiscoverRequestSchema>;
+
+export const listingDiscoverResponseSchema = z.object({
+  selectedUrl: z.string().url().optional(),
+  candidates: z.array(listingDiscoveryCandidateSchema),
+  summary: z.string(),
+  provider: z.enum(["gemini+google-search", "fallback"]),
+});
+export type ListingDiscoverResponse = z.infer<typeof listingDiscoverResponseSchema>;
+
+export const listingExtractRequestSchema = z.object({
+  listingUrl: z.string().url(),
+});
+export type ListingExtractRequest = z.infer<typeof listingExtractRequestSchema>;
+
+export const listingExtractResponseSchema = z.object({
+  listing: z.object({
+    url: z.string().url(),
+    title: z.string().optional(),
+    summary: z.string().optional(),
+    address: z.string().optional(),
+    agencyName: z.string().optional(),
+    rentText: z.string().optional(),
+    propertyType: z.string().optional(),
+    furnishing: z.string().optional(),
+    bedrooms: z.number().int().optional(),
+    bathrooms: z.number().int().optional(),
+    parking: z.string().optional(),
+    inspectionText: z.string().optional(),
+    features: z.array(z.string()),
+    inventoryHints: z.array(z.string()),
+    checklistHints: inspectionChecklistSchema.optional(),
+  }),
+  provider: z.enum(["html+gemini", "fallback"]),
+});
+export type ListingExtractResponse = z.infer<typeof listingExtractResponseSchema>;
 
 export const knowledgeQueryRequestSchema = z.object({
   query: z.string().min(2),
@@ -602,6 +784,7 @@ export const searchHistoryEntrySchema = z.object({
   payload: z.object({
     address: z.string().optional(),
     agency: z.string().optional(),
+    listingUrl: z.string().url().optional(),
     coordinates: geoPointSchema.optional(),
     propertyNotes: z.string().optional(),
     inspectionChecklist: inspectionChecklistSchema.optional(),

@@ -173,6 +173,20 @@ export async function fetchJson<T>(
   }, timeoutMs);
 }
 
+export async function fetchText(
+  input: RequestInfo | URL,
+  init: RequestInit & { timeoutMs?: number } = {}
+): Promise<string> {
+  const { timeoutMs = 10_000, ...requestInit } = init;
+  return withTimeout(async () => {
+    const response = await fetch(input, requestInit);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} for ${String(input)}`);
+    }
+    return await response.text();
+  }, timeoutMs);
+}
+
 export function extractJsonText(rawText: string): string {
   const trimmed = rawText.trim();
   if (trimmed.startsWith("```")) {

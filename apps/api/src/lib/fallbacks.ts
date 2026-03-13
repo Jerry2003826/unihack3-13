@@ -3,14 +3,17 @@ import type {
   CommunityInsight,
   DecisionRecommendation,
   EvidenceItem,
-  FitScore,
   GeoAnalysis,
   Hazard,
+  InspectionChecklist,
   InspectionCoverage,
   InspectionMode,
+  PeoplePaperworkChecks,
+  PreferenceProfile,
   PreLeaseActionGuide,
   PropertyIntelligence,
 } from "@inspect-ai/contracts";
+import { buildReportScoreBundle } from "@inspect-ai/contracts";
 
 const NEGATIVE_TOKENS = [
   "mould",
@@ -25,23 +28,6 @@ const NEGATIVE_TOKENS = [
   "leak",
   "pest",
 ];
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function severityPenalty(severity: Hazard["severity"]) {
-  switch (severity) {
-    case "Critical":
-      return 35;
-    case "High":
-      return 20;
-    case "Medium":
-      return 10;
-    case "Low":
-      return 4;
-  }
-}
 
 export function buildGeoFallback(args: {
   address?: string;
@@ -192,81 +178,6 @@ export function buildEvidenceSummary(
   return [...hazardEvidence, ...intelligenceEvidence].slice(0, 8);
 }
 
-export function computeDecisionAndFit(args: {
-  hazards: Hazard[];
-  intelligence?: PropertyIntelligence;
-}) {
-  const riskPenalty = args.hazards.reduce((total, hazard) => total + severityPenalty(hazard.severity), 0);
-  const hazardPenalty = clamp(riskPenalty, 0, 100);
-
-  const noisePenalty =
-    args.intelligence?.geoAnalysis?.noiseRisk === "High"
-      ? 15
-      : args.intelligence?.geoAnalysis?.noiseRisk === "Medium"
-        ? 8
-        : 0;
-  const transitBonus = Math.round((args.intelligence?.geoAnalysis?.transitScore ?? 50) / 6);
-  const agencyDelta = Math.round(((args.intelligence?.agencyBackground?.sentimentScore ?? 3) - 3) * 8);
-
-  const fitScoreValue = clamp(82 - hazardPenalty * 0.5 - noisePenalty + transitBonus + agencyDelta, 0, 100);
-
-  const reasons: string[] = [];
-  if (hazardPenalty >= 70) {
-    reasons.push("Multiple severe hazards materially increase repair and safety risk.");
-  } else if (hazardPenalty >= 35) {
-    reasons.push("Visible issues likely require repair commitments or follow-up inspections.");
-  } else {
-    reasons.push("Observed visual risk is limited, but not comprehensive.");
-  }
-
-  if (args.intelligence?.geoAnalysis?.warning) {
-    reasons.push(args.intelligence.geoAnalysis.warning);
-  }
-
-  if (args.intelligence?.agencyBackground?.commonComplaints.length) {
-    reasons.push(`Agency complaints: ${args.intelligence.agencyBackground.commonComplaints.slice(0, 2).join(", ")}.`);
-  }
-
-  let outcome: DecisionRecommendation["outcome"] = "Apply";
-  if (hazardPenalty >= 70) {
-    outcome = "Walk Away";
-  } else if (hazardPenalty >= 40 || noisePenalty >= 15) {
-    outcome = "Inspect Further";
-  } else if (hazardPenalty >= 15 || agencyDelta < 0) {
-    outcome = "Negotiate";
-  }
-
-  const recommendation: DecisionRecommendation = {
-    outcome,
-    summary:
-      outcome === "Walk Away"
-        ? "Risk is elevated enough that another property is likely a safer choice."
-        : outcome === "Inspect Further"
-          ? "Proceed only after getting more evidence, repair commitments, or specialist checks."
-          : outcome === "Negotiate"
-            ? "Proceed with caution and use the identified issues to negotiate terms."
-            : "Current signals are acceptable, provided the lease terms remain clean.",
-    reasons,
-  };
-
-  const fitScore: FitScore = {
-    score: fitScoreValue,
-    summary:
-      fitScoreValue >= 75
-        ? "Good overall fit if lease terms and repairs are documented."
-        : fitScoreValue >= 50
-          ? "Moderate fit with some trade-offs that should be negotiated."
-          : "Weak fit unless the owner addresses several concerns first.",
-    drivers: [
-      `Visual hazard penalty: ${hazardPenalty}`,
-      `Transit score: ${args.intelligence?.geoAnalysis?.transitScore ?? 50}`,
-      `Agency sentiment: ${args.intelligence?.agencyBackground?.sentimentScore ?? 3}`,
-    ],
-  };
-
-  return { recommendation, fitScore };
-}
-
 export function buildActionGuide(args: {
   hazards: Hazard[];
   intelligence?: PropertyIntelligence;
@@ -307,8 +218,24 @@ export function buildNegotiationFallback(args: {
   hazards: Hazard[];
   intelligence?: PropertyIntelligence;
   inspectionMode: InspectionMode;
+  inspectionChecklist?: InspectionChecklist;
+  paperworkChecks?: PeoplePaperworkChecks;
+  askingRent?: number;
+  lightingScoreAuto?: number;
+  lightingScoreManual?: number;
+  preferenceProfile?: PreferenceProfile;
 }) {
-  const { recommendation, fitScore } = computeDecisionAndFit(args);
+  const { recommendation, fitScore } = buildReportScoreBundle({
+    hazards: args.hazards,
+    intelligence: args.intelligence,
+    inspectionChecklist: args.inspectionChecklist,
+    inspectionMode: args.inspectionMode,
+    paperworkChecks: args.paperworkChecks,
+    askingRent: args.askingRent,
+    lightingScoreAuto: args.lightingScoreAuto,
+    lightingScoreManual: args.lightingScoreManual,
+    preferenceProfile: args.preferenceProfile,
+  });
   const evidenceSummary = buildEvidenceSummary(args.hazards, args.intelligence);
   const inspectionCoverage = buildInspectionCoverage(args.inspectionMode, args.hazards);
   const preLeaseActionGuide = buildActionGuide({

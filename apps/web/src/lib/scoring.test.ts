@@ -37,6 +37,37 @@ describe("scoring", () => {
     expect(calculatePropertyRiskScore(hazards)).toBe(0);
   });
 
+  it("does not return a perfect risk score when no hazards were found but coverage is thin", () => {
+    expect(calculatePropertyRiskScore([], { inspectionMode: "live" })).toBeLessThan(100);
+  });
+
+  it("penalizes checklist concerns even when no hazards were detected", () => {
+    const cleanScore = calculatePropertyRiskScore([], {
+      inspectionMode: "manual",
+      inspectionChecklist: {
+        utilities: {
+          hotWater: "Working well",
+          drainage: "No issues",
+        },
+      },
+    });
+
+    const concerningScore = calculatePropertyRiskScore([], {
+      inspectionMode: "manual",
+      inspectionChecklist: {
+        utilities: {
+          hotWater: "Slow to heat and unstable",
+          drainage: "Drain smells and seems blocked",
+        },
+        pestsHiddenIssues: {
+          pests: "Possible cockroach activity under sink",
+        },
+      },
+    });
+
+    expect(concerningScore).toBeLessThan(cleanScore);
+  });
+
   it("returns severity breakdown and readable risk drivers", () => {
     const hazards = [
       createHazard({ severity: "High", category: "Mould", roomType: "bathroom" }),

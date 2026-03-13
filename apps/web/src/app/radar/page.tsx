@@ -14,7 +14,7 @@ function getErrorMessage(error: unknown): string {
 
 export default function RadarPage() {
   const router = useRouter();
-  const { address, agency, coordinates, targetDestinations, preferenceProfile, isDemoMode, setIntelligence } = useSessionStore();
+  const { address, agency, listingUrl, coordinates, targetDestinations, preferenceProfile, isDemoMode, setIntelligence } = useSessionStore();
   
   const [statusText, setStatusText] = useState("Initializing scan...");
   const hasFetched = useRef(false);
@@ -68,6 +68,7 @@ export default function RadarPage() {
             depth: "fast",
             address,
             agency,
+            listingUrl: listingUrl || undefined,
             coordinates: coordinates || undefined,
             preferenceProfile,
             targetDestinations,
@@ -94,7 +95,7 @@ export default function RadarPage() {
     }
 
     fetchIntelligence();
-  }, [address, agency, coordinates, isDemoMode, setIntelligence, targetDestinations, preferenceProfile, router]);
+  }, [address, agency, listingUrl, coordinates, isDemoMode, setIntelligence, targetDestinations, preferenceProfile, router]);
 
   return (
     <RadarLoader

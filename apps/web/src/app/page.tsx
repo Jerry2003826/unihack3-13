@@ -4,6 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { saveSearchHistory } from "@/lib/history/historyStore";
 import { requestCurrentLocation, reverseGeocodeCoordinates } from "@/lib/location";
+import { toOptionalUrl } from "@/lib/url";
+import { useChecklistPrefill } from "@/hooks/useChecklistPrefill";
+import { useListingDiscovery } from "@/hooks/useListingDiscovery";
 import { useSessionStore } from "@/store/useSessionStore";
 import { useHazardStore } from "@/store/useHazardStore";
 import { InspectionChecklistEditor } from "@/components/inspection/InspectionChecklistEditor";
@@ -20,6 +23,7 @@ export default function HomePage() {
   const {
     address: draftAddress,
     agency: draftAgency,
+    listingUrl: draftListingUrl,
     coordinates: draftCoordinates,
     inspectionChecklist: draftInspectionChecklist,
     askingRent: draftAskingRent,
@@ -32,11 +36,38 @@ export default function HomePage() {
 
   const [address, setAddress] = useState(draftAddress);
   const [agency, setAgency] = useState(draftAgency);
+  const [listingUrl, setListingUrl] = useState(draftListingUrl);
   const [coordinates, setCoordinates] = useState<GeoPoint | null>(draftCoordinates);
   const [inspectionChecklist, setInspectionChecklist] = useState<InspectionChecklist | null>(draftInspectionChecklist);
   const [askingRent, setAskingRent] = useState(typeof draftAskingRent === "number" ? String(draftAskingRent) : "");
   const [locationStatus, setLocationStatus] = useState<AsyncStatus>("idle");
   const [isManualAddressOpen, setIsManualAddressOpen] = useState(false);
+  const [isListingUrlManual, setIsListingUrlManual] = useState(Boolean(draftListingUrl.trim()));
+  const normalizedListingUrl = toOptionalUrl(listingUrl);
+  const listingDiscovery = useListingDiscovery({
+    address,
+    agency,
+    listingUrl,
+    enabled: true,
+    autoDetect: !isListingUrlManual && !normalizedListingUrl,
+    onAutoApply: (nextListingUrl) => {
+      setListingUrl(nextListingUrl);
+      updateInspectionDraft({ listingUrl: nextListingUrl });
+      setIsListingUrlManual(false);
+    },
+  });
+  const checklistPrefill = useChecklistPrefill({
+    address,
+    agency,
+    listingUrl: normalizedListingUrl,
+    coordinates,
+    checklist: inspectionChecklist,
+    enabled: true,
+    onApply: (nextChecklist) => {
+      setInspectionChecklist(nextChecklist);
+      updateInspectionDraft({ inspectionChecklist: nextChecklist });
+    },
+  });
 
   const hasAddress = address.trim().length > 0;
   const locationBadge =
@@ -62,6 +93,7 @@ export default function HomePage() {
       mode: "live",
       address: address.trim(),
       agency: agency.trim(),
+      listingUrl: normalizedListingUrl,
       coordinates,
       inspectionChecklist,
       askingRent: askingRent ? Number(askingRent) : null,
@@ -75,6 +107,7 @@ export default function HomePage() {
       payload: {
         address: address.trim(),
         agency: agency.trim(),
+        listingUrl: normalizedListingUrl,
         coordinates: coordinates || undefined,
         inspectionChecklist: inspectionChecklist || undefined,
       },
@@ -88,6 +121,7 @@ export default function HomePage() {
     updateInspectionDraft({
       address: address.trim(),
       agency: agency.trim(),
+      listingUrl: normalizedListingUrl,
       coordinates,
       inspectionChecklist,
       askingRent: askingRent ? Number(askingRent) : null,
@@ -102,6 +136,11 @@ export default function HomePage() {
       const geocoded = await reverseGeocodeCoordinates(nextCoordinates);
       setCoordinates(nextCoordinates);
       setAddress(geocoded.formattedAddress);
+      if (!isListingUrlManual && listingUrl) {
+        setListingUrl("");
+        updateInspectionDraft({ listingUrl: "" });
+        listingDiscovery.retry();
+      }
       setIsManualAddressOpen(false);
       setLocationStatus(geocoded.provider === "fallback" ? "fallback" : "success");
       toast.success("Address filled from current location.");
@@ -199,6 +238,11 @@ export default function HomePage() {
                         value={address}
                         onChange={(e) => {
                           setAddress(e.target.value);
+                          if (!isListingUrlManual && listingUrl) {
+                            setListingUrl("");
+                            updateInspectionDraft({ listingUrl: "" });
+                            listingDiscovery.retry();
+                          }
                           if (locationStatus !== "loading") {
                             setLocationStatus("idle");
                           }
@@ -232,16 +276,121 @@ export default function HomePage() {
               />
             </div>
             <div className="space-y-2">
+              <label htmlFor="listing-url" className="text-sm font-medium text-foreground/90">Property Listing Link (Optional)</label>
+              <Input
+                id="listing-url"
+                placeholder="Paste the Realestate, Domain, or agent listing page URL"
+                value={listingUrl}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setListingUrl(nextValue);
+                  setIsListingUrlManual(nextValue.trim().length > 0);
+                  updateInspectionDraft({ listingUrl: nextValue });
+                }}
+                className="bg-muted/50 focus-visible:ring-accent"
+              />
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span>
+                  Leave this blank and we&apos;ll try to infer a listing page from the address.
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto px-0 text-xs"
+                  onClick={() => {
+                    setListingUrl("");
+                    setIsListingUrlManual(false);
+                    updateInspectionDraft({ listingUrl: "" });
+                    listingDiscovery.retry();
+                  }}
+                >
+                  Auto-detect from address
+                </Button>
+              </div>
+              {listingDiscovery.status !== "idle" || normalizedListingUrl ? (
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                      Listing discovery
+                    </div>
+                    <Badge
+                      variant={
+                        listingDiscovery.status === "success"
+                          ? "default"
+                          : listingDiscovery.status === "loading"
+                            ? "secondary"
+                            : listingDiscovery.status === "error"
+                              ? "destructive"
+                              : "outline"
+                      }
+                    >
+                      {normalizedListingUrl ? "linked" : listingDiscovery.status}
+                    </Badge>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {listingDiscovery.status === "loading"
+                      ? "Searching for likely rental listing pages that match this address..."
+                      : listingDiscovery.summary || "You can paste the exact listing page URL if you already have it."}
+                  </p>
+                  {normalizedListingUrl ? (
+                    <a
+                      href={normalizedListingUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 block break-all text-xs text-accent underline-offset-4 hover:underline"
+                    >
+                      {normalizedListingUrl}
+                    </a>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+            <div className="space-y-2">
               <div className="text-sm font-medium text-foreground/90">Inspection Notes & Entry Condition (Optional)</div>
               <p className="text-xs text-muted-foreground">
                 Capture the practical items that affect move-in risk, lease clarity, utilities, and daily livability.
               </p>
+              {checklistPrefill.status !== "idle" ? (
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                      Remote checklist assist
+                    </div>
+                    <Badge
+                      variant={
+                        checklistPrefill.status === "success"
+                          ? "default"
+                          : checklistPrefill.status === "loading"
+                            ? "secondary"
+                            : checklistPrefill.status === "error"
+                              ? "destructive"
+                              : "outline"
+                      }
+                    >
+                      {checklistPrefill.status}
+                    </Badge>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {checklistPrefill.status === "loading"
+                      ? "Searching Google Maps and web sources to prefill the checklist..."
+                      : checklistPrefill.summary}
+                  </p>
+                  {checklistPrefill.status === "fallback" || checklistPrefill.status === "error" ? (
+                    <Button type="button" variant="ghost" size="sm" className="mt-2 h-auto px-0 text-xs" onClick={checklistPrefill.retry}>
+                      Retry remote prefill
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
               <InspectionChecklistEditor
                 value={inspectionChecklist}
                 onChange={(nextChecklist) => {
                   setInspectionChecklist(nextChecklist);
                   updateInspectionDraft({ inspectionChecklist: nextChecklist });
                 }}
+                onFieldEdit={checklistPrefill.markFieldAsManual}
+                autoFilledFieldKeys={checklistPrefill.autoFilledFieldKeys}
                 compact
               />
             </div>

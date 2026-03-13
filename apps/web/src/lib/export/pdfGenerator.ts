@@ -7,6 +7,55 @@ interface ExportNodeOptions {
   snapshot: ReportSnapshot;
 }
 
+const EXPORT_ROOT_ATTR = "data-export-root";
+
+function sanitizeUnsupportedColorFunctions(value: string) {
+  return value.replace(/\sin\s(oklab|oklch)(?:\s+[a-z-]+)*/gi, "");
+}
+
+function getExportSafeStyleValue(value: string) {
+  if (!value || value === "none") {
+    return value;
+  }
+
+  return /oklab|oklch/i.test(value) ? sanitizeUnsupportedColorFunctions(value) : value;
+}
+
+function applyExportSafeStyles(sourceRoot: HTMLElement, cloneRoot: HTMLElement) {
+  const sourceElements = [sourceRoot, ...Array.from(sourceRoot.querySelectorAll<HTMLElement>("*"))];
+  const cloneElements = [cloneRoot, ...Array.from(cloneRoot.querySelectorAll<HTMLElement>("*"))];
+
+  for (let index = 0; index < sourceElements.length; index += 1) {
+    const sourceElement = sourceElements[index];
+    const cloneElement = cloneElements[index];
+
+    if (!sourceElement || !cloneElement) {
+      continue;
+    }
+
+    const computed = window.getComputedStyle(sourceElement);
+    const backgroundImage = getExportSafeStyleValue(computed.backgroundImage);
+    if (backgroundImage && backgroundImage !== "none") {
+      cloneElement.style.backgroundImage = backgroundImage;
+    }
+
+    const background = getExportSafeStyleValue(computed.background);
+    if (background && background !== "none") {
+      cloneElement.style.background = background;
+    }
+
+    const boxShadow = getExportSafeStyleValue(computed.boxShadow);
+    if (boxShadow && boxShadow !== "none") {
+      cloneElement.style.boxShadow = boxShadow;
+    }
+
+    const textShadow = getExportSafeStyleValue(computed.textShadow);
+    if (textShadow && textShadow !== "none") {
+      cloneElement.style.textShadow = textShadow;
+    }
+  }
+}
+
 function waitForImage(image: HTMLImageElement) {
   if (image.complete && image.naturalWidth > 0) {
     return Promise.resolve();
@@ -32,15 +81,28 @@ export async function waitForStableReport(node: HTMLElement) {
 
 async function renderReportCanvas(node: HTMLElement) {
   await waitForStableReport(node);
+  node.setAttribute(EXPORT_ROOT_ATTR, "true");
 
-  return await html2canvas(node, {
-    backgroundColor: "#090b12",
-    scale: Math.min(window.devicePixelRatio || 1, 2),
-    useCORS: true,
-    allowTaint: false,
-    logging: false,
-    ignoreElements: (element) => element.getAttribute("data-export-ignore") === "true",
-  });
+  try {
+    return await html2canvas(node, {
+      backgroundColor: "#090b12",
+      scale: Math.min(window.devicePixelRatio || 1, 2),
+      useCORS: true,
+      allowTaint: false,
+      logging: false,
+      ignoreElements: (element) => element.getAttribute("data-export-ignore") === "true",
+      onclone: (clonedDocument) => {
+        const cloneRoot = clonedDocument.querySelector<HTMLElement>(`[${EXPORT_ROOT_ATTR}="true"]`);
+        if (!cloneRoot) {
+          return;
+        }
+
+        applyExportSafeStyles(node, cloneRoot);
+      },
+    });
+  } finally {
+    node.removeAttribute(EXPORT_ROOT_ATTR);
+  }
 }
 
 function sanitizeFileSegment(value: string) {

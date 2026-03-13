@@ -1,4 +1,9 @@
-import { negotiateRequestSchema, negotiateResponseSchema, sanitizeNegotiateResponse } from "@inspect-ai/contracts";
+import {
+  buildReportScoreBundle,
+  negotiateRequestSchema,
+  negotiateResponseSchema,
+  sanitizeNegotiateResponse,
+} from "@inspect-ai/contracts";
 import { callGeminiJson } from "@/lib/ai";
 import { appEnv } from "@/lib/env";
 import { buildNegotiationFallback } from "@/lib/fallbacks";
@@ -70,6 +75,12 @@ export async function POST(request: Request) {
             hazards: parsed.data.hazards,
             intelligence: parsed.data.intelligence,
             inspectionMode: parsed.data.inspectionMode,
+            inspectionChecklist: parsed.data.inspectionChecklist,
+            paperworkChecks: parsed.data.paperworkChecks,
+            askingRent: parsed.data.askingRent,
+            lightingScoreAuto: parsed.data.lightingScoreAuto,
+            lightingScoreManual: parsed.data.lightingScoreManual,
+            preferenceProfile: parsed.data.preferenceProfile,
           })
         )
       ),
@@ -90,8 +101,25 @@ export async function POST(request: Request) {
       hazards: parsed.data.hazards,
       intelligence: parsed.data.intelligence,
       inspectionMode: parsed.data.inspectionMode,
+      inspectionChecklist: parsed.data.inspectionChecklist,
+      paperworkChecks: parsed.data.paperworkChecks,
+      askingRent: parsed.data.askingRent,
+      lightingScoreAuto: parsed.data.lightingScoreAuto,
+      lightingScoreManual: parsed.data.lightingScoreManual,
+      preferenceProfile: parsed.data.preferenceProfile,
     })
   );
+  const canonicalScore = buildReportScoreBundle({
+    hazards: parsed.data.hazards,
+    intelligence: parsed.data.intelligence,
+    inspectionChecklist: parsed.data.inspectionChecklist,
+    inspectionMode: parsed.data.inspectionMode,
+    paperworkChecks: parsed.data.paperworkChecks,
+    askingRent: parsed.data.askingRent,
+    lightingScoreAuto: parsed.data.lightingScoreAuto,
+    lightingScoreManual: parsed.data.lightingScoreManual,
+    preferenceProfile: parsed.data.preferenceProfile,
+  });
   const knowledgeMatches = queryKnowledge({
     query: [
       parsed.data.hazards.map((hazard) => `${hazard.category} ${hazard.description}`).join(" "),
@@ -116,6 +144,7 @@ export async function POST(request: Request) {
         "This is not legal advice. Focus on practical renter guidance.",
         "The property intelligence payload has already been condensed by Gemini 2.5 grounded summaries. Synthesize it into a final renter recommendation.",
         "If an inspectionChecklist is provided, treat it as first-hand renter observations and prioritize it over generic assumptions.",
+        "The fit score and decision outcome are already pre-scored locally. Keep your wording aligned with that score context.",
         "Use the provided hazards and property intelligence to produce:",
         "- an email template",
         "- key negotiation points",
@@ -136,6 +165,7 @@ export async function POST(request: Request) {
         "preLeaseActionGuide items must be short action lines under 100 characters.",
         "Do not include business directory fragments, review widgets, opening hours, or raw copied snippets.",
         "Use the knowledge snippets when they are relevant, but do not quote them verbatim.",
+        JSON.stringify({ canonicalScore }, null, 2),
         JSON.stringify({ knowledgeMatches }, null, 2),
         JSON.stringify(parsed.data, null, 2),
       ].join("\n"),
@@ -145,6 +175,23 @@ export async function POST(request: Request) {
       negotiateResponseSchema.parse({
         ...fallback,
         ...structured,
+        decisionRecommendation: {
+          ...structured.decisionRecommendation,
+          outcome: canonicalScore.recommendation.outcome,
+          summary: structured.decisionRecommendation.summary || canonicalScore.recommendation.summary,
+          reasons: [
+            ...structured.decisionRecommendation.reasons,
+            ...canonicalScore.recommendation.reasons,
+          ].filter(Boolean).slice(0, 4),
+        },
+        fitScore: {
+          ...structured.fitScore,
+          score: canonicalScore.fitScore.score,
+          summary: structured.fitScore.summary || canonicalScore.fitScore.summary,
+          drivers: [...canonicalScore.fitScore.drivers, ...structured.fitScore.drivers]
+            .filter(Boolean)
+            .slice(0, 4),
+        },
       })
     );
 

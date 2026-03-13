@@ -3,84 +3,27 @@ import type {
   ComparisonRankedCandidate,
   ComparisonReportSnapshot,
   FactorWeights,
-  NoiseTolerance,
   PreferenceProfile,
 } from "./schemas";
+import {
+  scoreAgencySentiment,
+  scoreBudgetFit,
+  scoreCommunitySentiment,
+  scoreNoiseFit,
+} from "./scoring";
 
 export const DEFAULT_FACTOR_WEIGHTS: FactorWeights = {
-  budgetWeight: 18,
-  commuteWeight: 18,
-  noiseWeight: 10,
-  lightingWeight: 12,
-  conditionWeight: 20,
-  agencyWeight: 10,
+  budgetWeight: 16,
+  commuteWeight: 16,
+  noiseWeight: 12,
+  lightingWeight: 8,
+  conditionWeight: 28,
+  agencyWeight: 8,
   communityWeight: 12,
 };
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
-}
-
-function sentimentScore(sentiment: "positive" | "neutral" | "mixed" | "negative" | "unknown" | undefined) {
-  switch (sentiment) {
-    case "positive":
-      return 85;
-    case "neutral":
-      return 65;
-    case "mixed":
-      return 52;
-    case "negative":
-      return 28;
-    default:
-      return 50;
-  }
-}
-
-function noiseScore(risk: "Low" | "Medium" | "High" | undefined, tolerance?: NoiseTolerance) {
-  const base =
-    risk === "Low"
-      ? 88
-      : risk === "Medium"
-        ? 60
-        : risk === "High"
-          ? 28
-          : 55;
-
-  if (tolerance === "low") {
-    return clamp(base - (risk === "Medium" ? 8 : risk === "High" ? 12 : 0), 0, 100);
-  }
-
-  if (tolerance === "high") {
-    return clamp(base + (risk === "Medium" ? 8 : risk === "Low" ? 4 : 0), 0, 100);
-  }
-
-  return clamp(base, 0, 100);
-}
-
-function budgetScore(askingRent?: number, budget?: number) {
-  if (!askingRent || !budget || budget <= 0) {
-    return null;
-  }
-
-  const diffRatio = (askingRent - budget) / budget;
-
-  if (diffRatio <= -0.1) {
-    return 97;
-  }
-
-  if (diffRatio <= 0) {
-    return clamp(92 - Math.abs(diffRatio) * 30, 82, 97);
-  }
-
-  return clamp(92 - diffRatio * 220, 0, 92);
-}
-
-function agencyScore(sentimentScoreValue?: number) {
-  if (typeof sentimentScoreValue !== "number") {
-    return 52;
-  }
-
-  return clamp(sentimentScoreValue * 20, 0, 100);
 }
 
 function fitLabel(totalScore: number): ComparisonRankedCandidate["fitLabel"] {
@@ -131,13 +74,21 @@ export function scoreComparisonCandidate(args: {
   const askingRent = candidate.userOverrides?.askingRent ?? snapshot.askingRent;
 
   const breakdown = {
-    budget: budgetScore(askingRent, preferenceProfile?.budget),
+    budget: scoreBudgetFit(askingRent, preferenceProfile?.budget),
     commute: snapshot.intelligence?.geoAnalysis?.transitScore ?? 50,
-    noise: noiseScore(snapshot.intelligence?.geoAnalysis?.noiseRisk, preferenceProfile?.noiseTolerance),
+    noise: scoreNoiseFit(snapshot.intelligence?.geoAnalysis?.noiseRisk, preferenceProfile?.noiseTolerance),
     lighting: clamp(lightingScoreUsed, 0, 100),
     condition: clamp(snapshot.propertyRiskScore, 0, 100),
-    agency: agencyScore(snapshot.intelligence?.agencyBackground?.sentimentScore),
-    community: sentimentScore(snapshot.intelligence?.communityInsight?.sentiment),
+    agency: scoreAgencySentiment(
+      snapshot.intelligence?.agencyBackground?.sentimentScore,
+      snapshot.intelligence?.agencyBackground?.citations.length ?? 0,
+      snapshot.intelligence?.agencyBackground?.commonComplaints.length ?? 0
+    ),
+    community: scoreCommunitySentiment(
+      snapshot.intelligence?.communityInsight?.sentiment,
+      snapshot.intelligence?.communityInsight?.citations.length ?? 0,
+      snapshot.intelligence?.fusion?.confidence
+    ),
   };
 
   const weightedFactors: Array<[keyof FactorWeights, number | null]> = [
@@ -173,6 +124,9 @@ export function scoreComparisonCandidate(args: {
   if ((breakdown.noise ?? 100) < 50) tradeoffs.push("Noise exposure may be uncomfortable for this preference profile.");
   if ((breakdown.agency ?? 100) < 50) tradeoffs.push("Agency sentiment suggests you should push for written commitments.");
   if ((breakdown.condition ?? 100) < 60) tradeoffs.push("Property condition needs negotiation or further inspection.");
+  if ((snapshot.paperworkChecks?.riskFlags.length ?? 0) > 0) {
+    tradeoffs.push("Paperwork and due-diligence risks still need written clarification.");
+  }
 
   if (snapshot.hazards.some((hazard) => hazard.severity === "Critical")) {
     cautions.push("Critical hazards were detected in the inspection evidence.");

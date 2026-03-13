@@ -8,7 +8,10 @@ export function normalizeReportSnapshot(snapshot: ReportSnapshot): ReportSnapsho
 
   return {
     ...sanitized,
-    propertyRiskScore: calculatePropertyRiskScore(sanitized.hazards),
+    propertyRiskScore: calculatePropertyRiskScore(sanitized.hazards, {
+      inspectionChecklist: sanitized.inputs.inspectionChecklist,
+      inspectionMode: sanitized.inputs.mode,
+    }),
     comparisonEligible: sanitized.comparisonEligible ?? true,
     paperworkChecks: sanitized.paperworkChecks ?? buildPeoplePaperworkChecks(sanitized),
   };

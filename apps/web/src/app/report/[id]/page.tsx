@@ -32,6 +32,7 @@ import { publicAppConfig } from "@/lib/config/public";
 import { exportReportPdf, exportReportPoster } from "@/lib/export/pdfGenerator";
 import { buildRecommendationFallbackBundle } from "@/lib/recommendationFallback";
 import { normalizeReportSnapshot } from "@/lib/report/normalizeReportSnapshot";
+import { toOptionalUrl } from "@/lib/url";
 import {
   getReportSnapshot,
   saveReportSnapshot,
@@ -129,6 +130,7 @@ function buildRecoverySnapshot(reportId: string): ReportSnapshot | null {
       mode: session.inspectionMode,
       address: session.address || undefined,
       agency: session.agency || undefined,
+      listingUrl: toOptionalUrl(session.listingUrl),
       coordinates: session.coordinates || undefined,
       propertyNotes: session.propertyNotes || undefined,
       inspectionChecklist: session.inspectionChecklist || undefined,
@@ -137,7 +139,10 @@ function buildRecoverySnapshot(reportId: string): ReportSnapshot | null {
     },
     hazards,
     intelligence: session.intelligence || undefined,
-    propertyRiskScore: calculatePropertyRiskScore(hazards),
+    propertyRiskScore: calculatePropertyRiskScore(hazards, {
+      inspectionChecklist: session.inspectionChecklist || undefined,
+      inspectionMode: session.inspectionMode,
+    }),
     askingRent: session.askingRent || undefined,
   });
 }
@@ -356,7 +361,11 @@ export default function ReportPage() {
             ...current,
             ...patch,
             propertyRiskScore:
-              patch.propertyRiskScore ?? calculatePropertyRiskScore(patch.hazards ?? current.hazards),
+              patch.propertyRiskScore ??
+              calculatePropertyRiskScore(patch.hazards ?? current.hazards, {
+                inspectionChecklist: patch.inputs?.inspectionChecklist ?? current.inputs.inspectionChecklist,
+                inspectionMode: patch.inputs?.mode ?? current.inputs.mode,
+              }),
           })
         );
         return nextSnapshotForStore;
@@ -371,6 +380,12 @@ export default function ReportPage() {
         hazards: currentSnapshot.hazards,
         intelligence,
         inspectionMode: currentSnapshot.inputs.mode,
+        inspectionChecklist: currentSnapshot.inputs.inspectionChecklist,
+        paperworkChecks: currentSnapshot.paperworkChecks,
+        askingRent: currentSnapshot.askingRent,
+        lightingScoreAuto: currentSnapshot.lightingScoreAuto,
+        lightingScoreManual: currentSnapshot.lightingScoreManual,
+        preferenceProfile: currentSnapshot.inputs.preferenceProfile,
       });
 
       await applyPatch({
@@ -398,6 +413,7 @@ export default function ReportPage() {
               depth: "full",
               address: currentSnapshot.inputs.address,
               agency: currentSnapshot.inputs.agency,
+              listingUrl: currentSnapshot.inputs.listingUrl,
               coordinates: currentSnapshot.inputs.coordinates,
               propertyNotes: currentSnapshot.inputs.propertyNotes,
               targetDestinations: currentSnapshot.inputs.targetDestinations,
@@ -432,6 +448,11 @@ export default function ReportPage() {
             intelligence: latestIntelligence ?? currentSnapshot.intelligence,
             inspectionChecklist: currentSnapshot.inputs.inspectionChecklist,
             preferenceProfile: currentSnapshot.inputs.preferenceProfile,
+            listingUrl: currentSnapshot.inputs.listingUrl,
+            paperworkChecks: currentSnapshot.paperworkChecks,
+            askingRent: currentSnapshot.askingRent,
+            lightingScoreAuto: currentSnapshot.lightingScoreAuto,
+            lightingScoreManual: currentSnapshot.lightingScoreManual,
           },
           parse: (value) => negotiateResponseSchema.parse(value),
         });

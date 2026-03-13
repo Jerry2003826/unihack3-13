@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCameraStream } from "@/hooks/useCameraStream";
 import { useVisionEngine } from "@/hooks/useVisionEngine";
 import { useVoiceAlert } from "@/hooks/useVoiceAlert";
+import { applyLiveChecklistCapture } from "@/lib/inspectionChecklist";
 import { useHazardStore } from "@/store/useHazardStore";
 import { useSessionStore } from "@/store/useSessionStore";
 import { saveReportSnapshot } from "@/lib/report-snapshot/reportSnapshotStore";
@@ -27,15 +28,14 @@ export default function ScanPage() {
   const sessionStore = useSessionStore();
   const hazardStore = useHazardStore();
   const { address, isDemoMode, setReportId, setIsDemoMode } = sessionStore;
-  const { scanPhase, hazards, setScanPhase, isAnalyzing } = hazardStore;
+  const { scanPhase, hazards, liveEvidenceFrames, setScanPhase, isAnalyzing } = hazardStore;
 
   const [roomType, setRoomType] = useState<RoomType>("unknown");
   const [cameraError, setCameraError] = useState<string | null>(null);
   const { videoRef, canvasRef, startCamera, stopCamera, captureFrame, getCameraError, clearCameraError } =
     useCameraStream();
 
-  // The engine hook will start capturing frames when scanPhase is "scanning"
-  useVisionEngine({ captureFrame, roomType });
+  const { banner, guidanceTarget } = useVisionEngine({ captureFrame, roomType });
   const { primeSpeechSynthesis, cancelAlerts } = useVoiceAlert();
 
   useEffect(() => {
@@ -86,6 +86,12 @@ export default function ScanPage() {
 
     try {
       const generatedReportId = crypto.randomUUID();
+      const finalizedChecklist = applyLiveChecklistCapture(sessionStore.inspectionChecklist, {
+        section: "entryCondition",
+        field: "conditionPhotosTaken",
+        value: "Guided scan captured dated evidence across key room zones.",
+        confidence: "high",
+      });
       
       const newSnapshot: ReportSnapshot = {
         reportId: generatedReportId,
@@ -95,18 +101,34 @@ export default function ScanPage() {
           mode: "live",
           address: sessionStore.address,
           agency: sessionStore.agency,
+          listingUrl: sessionStore.listingUrl || undefined,
           coordinates: sessionStore.coordinates || undefined,
           propertyNotes: sessionStore.propertyNotes,
-          inspectionChecklist: sessionStore.inspectionChecklist || undefined,
+          inspectionChecklist: finalizedChecklist || undefined,
           targetDestinations: sessionStore.targetDestinations,
           preferenceProfile: sessionStore.preferenceProfile || undefined,
         },
         hazards: [...hazardStore.hazards],
         intelligence: sessionStore.intelligence || undefined,
-        propertyRiskScore: calculatePropertyRiskScore(hazardStore.hazards),
+        propertyRiskScore: calculatePropertyRiskScore(hazardStore.hazards, {
+          inspectionChecklist: sessionStore.inspectionChecklist || undefined,
+          inspectionMode: "live",
+        }),
         askingRent: sessionStore.askingRent || undefined,
+        exportAssets:
+          Object.keys(liveEvidenceFrames).length > 0
+            ? {
+                hazardThumbnails: Object.entries(liveEvidenceFrames).map(([hazardId, base64]) => ({
+                  hazardId,
+                  base64,
+                })),
+              }
+            : undefined,
       };
 
+      sessionStore.updateInspectionDraft({
+        inspectionChecklist: finalizedChecklist,
+      });
       await saveReportSnapshot(normalizeReportSnapshot(newSnapshot));
       setReportId(generatedReportId);
       toast.dismiss(toastId);
@@ -154,7 +176,23 @@ export default function ScanPage() {
         <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_top,_rgba(61,220,255,0.18),_transparent_32%),linear-gradient(180deg,_rgba(18,24,38,0.98),_rgba(9,11,18,1))]" />
       ) : null}
 
-      <BoundingBoxOverlay />
+      <BoundingBoxOverlay guidanceTarget={guidanceTarget} />
+
+      {banner.text ? (
+        <div className="absolute inset-x-4 top-24 z-40 rounded-2xl border border-border/70 bg-card/92 px-4 py-3 text-sm text-foreground shadow-2xl backdrop-blur">
+          <div className="flex items-center gap-2">
+            <span
+              className={`size-2 rounded-full ${
+                banner.tone === "success" ? "bg-emerald-400" : "bg-cyan-400"
+              }`}
+            />
+            <span className="font-medium">
+              {banner.tone === "success" ? "Confirmed" : "AI guidance"}
+            </span>
+          </div>
+          <p className="mt-2 text-muted-foreground">{banner.text}</p>
+        </div>
+      ) : null}
 
       {cameraError ? (
         <div className="absolute inset-x-4 top-24 z-40 rounded-2xl border border-border/70 bg-card/95 p-4 text-sm text-foreground shadow-2xl backdrop-blur">
