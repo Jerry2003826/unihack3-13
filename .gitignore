@@ -20,6 +20,9 @@ dist/
 .env.local
 .env.*.local
 
+# Local storage / dev data
+.local-storage/
+
 # Misc
 .DS_Store
 *.pem

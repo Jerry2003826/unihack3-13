@@ -13,6 +13,7 @@ import {
   getRequestId,
   readJsonBody,
 } from "@/lib/http";
+import { buildLocalObjectUrl } from "@/lib/localStorage";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { createSignedObjectUrl } from "@/lib/spaces";
 import { logError, logInfo, logWarn } from "@/lib/telemetry";
@@ -76,17 +77,6 @@ export async function POST(request: Request) {
     });
   }
 
-  if (!hasSpacesConfig()) {
-    return createErrorResponse({
-      code: "storage_unavailable",
-      message: "DigitalOcean Spaces is not configured for this deployment.",
-      origin: cors.origin,
-      requestId,
-      status: 503,
-      headers: createRateLimitHeaders(rateLimit),
-    });
-  }
-
   const invalidKey = parsed.data.objectKeys.find((objectKey) => !isAllowedObjectKey(objectKey));
   if (invalidKey) {
     logWarn({
@@ -113,11 +103,16 @@ export async function POST(request: Request) {
   try {
     const downloads = parsed.data.objectKeys.map((objectKey) => ({
       objectKey,
-      downloadUrl: createSignedObjectUrl({
-        method: "GET",
-        objectKey,
-        expiresInSeconds: 300,
-      }),
+      downloadUrl: hasSpacesConfig()
+        ? createSignedObjectUrl({
+            method: "GET",
+            objectKey,
+            expiresInSeconds: 300,
+          })
+        : buildLocalObjectUrl({
+            requestUrl: request.url,
+            objectKey,
+          }),
     }));
 
     const payload = signedAssetGetResponseSchema.parse({ downloads });
@@ -126,7 +121,7 @@ export async function POST(request: Request) {
       message: "Signed asset URLs created",
       route: "/api/assets/sign-get",
       requestId,
-      provider: "digitalocean-spaces",
+      provider: hasSpacesConfig() ? "digitalocean-spaces" : "local-storage",
       durationMs: Date.now() - startedAt,
     });
 

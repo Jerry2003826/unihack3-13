@@ -13,7 +13,7 @@ function appendCorsHeaders(headers: Headers, origin?: string | null) {
   }
 
   headers.set("Access-Control-Allow-Origin", origin);
-  headers.set("Access-Control-Allow-Methods", "OPTIONS, POST");
+  headers.set("Access-Control-Allow-Methods", "GET, OPTIONS, POST, PUT");
   headers.set("Access-Control-Allow-Headers", "Content-Type, X-Inspection-Id, X-Request-Id");
   headers.set("Access-Control-Max-Age", "7200");
   headers.set("Vary", "Origin");

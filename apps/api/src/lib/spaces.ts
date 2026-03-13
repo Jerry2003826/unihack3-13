@@ -1,6 +1,7 @@
 import { createHmac, createHash } from "node:crypto";
 import { appEnv, hasSpacesConfig } from "@/lib/env";
 import { withTimeout } from "@/lib/http";
+import { readLocalObject, writeLocalObject } from "@/lib/localStorage";
 
 const EXTENSIONS: Record<string, string> = {
   "image/jpeg": "jpg",
@@ -124,6 +125,10 @@ export async function fetchObjectAsBase64(objectKey: string) {
 }
 
 export async function fetchObjectBytes(objectKey: string) {
+  if (!hasSpacesConfig()) {
+    return await readLocalObject(objectKey);
+  }
+
   const signedUrl = createSignedObjectUrl({
     method: "GET",
     objectKey,
@@ -148,6 +153,14 @@ export async function uploadObjectBytes(args: {
   bytes: Buffer;
   contentType: string;
 }) {
+  if (!hasSpacesConfig()) {
+    await writeLocalObject({
+      objectKey: args.objectKey,
+      bytes: args.bytes,
+    });
+    return;
+  }
+
   const signedUrl = createSignedObjectUrl({
     method: "PUT",
     objectKey: args.objectKey,

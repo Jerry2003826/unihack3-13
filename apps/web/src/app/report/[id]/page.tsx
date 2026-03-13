@@ -10,12 +10,14 @@ import type {
   NegotiateResponse,
   ReportSnapshot,
   SignedAssetGetResponse,
+  StaticMapResponse,
 } from "@inspect-ai/contracts";
 import {
   intelligenceResponseSchema,
   negotiateResponseSchema,
   reportSnapshotSchema,
   signedAssetGetResponseSchema,
+  staticMapResponseSchema,
 } from "@inspect-ai/contracts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -216,6 +218,7 @@ export default function ReportPage() {
   const [isBooting, setIsBooting] = useState(true);
   const [deepStatus, setDeepStatus] = useState<AsyncStatus>("idle");
   const [recommendationStatus, setRecommendationStatus] = useState<AsyncStatus>("idle");
+  const [mapStatus, setMapStatus] = useState<AsyncStatus>("idle");
   const [lazyError, setLazyError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState<"pdf" | "poster" | null>(null);
   const [signedThumbnailUrls, setSignedThumbnailUrls] = useState<Record<string, string>>({});
@@ -246,6 +249,7 @@ export default function ReportPage() {
         setSnapshot(normalized);
         setDeepStatus(hasRecommendationBundle(normalized) ? "success" : "idle");
         setRecommendationStatus(hasRecommendationBundle(normalized) ? "success" : "idle");
+        setMapStatus(normalized.exportAssets?.staticMapImageBase64 ? "success" : "idle");
         setIsBooting(false);
 
         if (normalized.propertyRiskScore !== parsedStored.data.propertyRiskScore) {
@@ -261,6 +265,7 @@ export default function ReportPage() {
           return;
         }
         setSnapshot(recovered);
+        setMapStatus(recovered.exportAssets?.staticMapImageBase64 ? "success" : "idle");
         setIsBooting(false);
         return;
       }
@@ -433,6 +438,65 @@ export default function ReportPage() {
       controller.abort();
     };
   }, [signedThumbnailUrls, snapshot]);
+
+  useEffect(() => {
+    if (!snapshot || snapshot.exportAssets?.staticMapImageBase64 || (!snapshot.inputs.address && !snapshot.inputs.coordinates)) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const currentSnapshot = snapshot;
+
+    async function loadStaticMap() {
+      setMapStatus("loading");
+
+      try {
+        const response = await fetch(resolveApiUrl("/api/maps/static"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            address: currentSnapshot.inputs.address,
+            coordinates: currentSnapshot.inputs.coordinates,
+            width: 640,
+            height: 360,
+            zoom: 15,
+          }),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Static map request failed with ${response.status}`);
+        }
+
+        const payload: StaticMapResponse = staticMapResponseSchema.parse(await response.json());
+        setSnapshot((current) => {
+          if (!current) {
+            return current;
+          }
+
+          return reportSnapshotSchema.parse({
+            ...current,
+            exportAssets: {
+              ...current.exportAssets,
+              staticMapImageBase64: payload.staticMapImageBase64,
+            },
+          });
+        });
+        setMapStatus("success");
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setMapStatus("error");
+          console.warn("Failed to recover static map image", error);
+        }
+      }
+    }
+
+    loadStaticMap();
+
+    return () => {
+      controller.abort();
+    };
+  }, [snapshot]);
 
   const riskState = useMemo(() => {
     if (!snapshot) {
@@ -667,6 +731,20 @@ export default function ReportPage() {
             <CardContent className="space-y-4 text-sm text-muted-foreground">
               {snapshot.intelligence?.geoAnalysis ? (
                 <>
+                  {snapshot.exportAssets?.staticMapImageBase64 ? (
+                    <div className="overflow-hidden rounded-2xl border border-border/70 bg-card">
+                      <Image
+                        src={snapshot.exportAssets.staticMapImageBase64}
+                        alt="Area map"
+                        width={640}
+                        height={360}
+                        unoptimized
+                        className="h-auto w-full object-cover"
+                      />
+                    </div>
+                  ) : mapStatus === "loading" ? (
+                    <Skeleton className="h-[220px] w-full rounded-2xl" />
+                  ) : null}
                   <div className="flex flex-wrap gap-2">
                     <Badge variant="outline" className="border-border/70 text-foreground">
                       Noise: {snapshot.intelligence.geoAnalysis.noiseRisk}

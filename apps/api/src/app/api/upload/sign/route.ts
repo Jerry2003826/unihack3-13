@@ -10,6 +10,7 @@ import {
   getRequestId,
   readJsonBody,
 } from "@/lib/http";
+import { buildLocalObjectUrl } from "@/lib/localStorage";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { buildManualObjectKey, createSignedObjectUrl } from "@/lib/spaces";
 import { logError, logInfo } from "@/lib/telemetry";
@@ -69,17 +70,6 @@ export async function POST(request: Request) {
     });
   }
 
-  if (!hasSpacesConfig()) {
-    return createErrorResponse({
-      code: "storage_unavailable",
-      message: "DigitalOcean Spaces is not configured for this deployment.",
-      origin: cors.origin,
-      requestId,
-      status: 503,
-      headers: createRateLimitHeaders(rateLimit),
-    });
-  }
-
   if (parsed.data.files.length === 0 || parsed.data.files.length > 8) {
     return createErrorResponse({
       code: "invalid_file_count",
@@ -108,22 +98,28 @@ export async function POST(request: Request) {
   try {
     const uploads = parsed.data.files.map((file, index) => {
       const objectKey = buildManualObjectKey(parsed.data.inspectionId, file.contentType);
+      const provider = hasSpacesConfig() ? "digitalocean-spaces" : "local-storage";
       logInfo({
         message: "Generated signed upload target",
         route: "/api/upload/sign",
         requestId,
         inspectionId: parsed.data.inspectionId,
-        provider: "digitalocean-spaces",
+        provider,
         uploadIndex: index,
       });
 
       return {
-        uploadUrl: createSignedObjectUrl({
-          method: "PUT",
-          objectKey,
-          contentType: file.contentType,
-          expiresInSeconds: 900,
-        }),
+        uploadUrl: hasSpacesConfig()
+          ? createSignedObjectUrl({
+              method: "PUT",
+              objectKey,
+              contentType: file.contentType,
+              expiresInSeconds: 900,
+            })
+          : buildLocalObjectUrl({
+              requestUrl: request.url,
+              objectKey,
+            }),
         objectKey,
       };
     });
@@ -135,7 +131,7 @@ export async function POST(request: Request) {
       route: "/api/upload/sign",
       requestId,
       inspectionId: parsed.data.inspectionId,
-      provider: `digitalocean-spaces:${appEnv.spacesBucket}`,
+      provider: hasSpacesConfig() ? `digitalocean-spaces:${appEnv.spacesBucket}` : "local-storage",
       durationMs: Date.now() - startedAt,
     });
 

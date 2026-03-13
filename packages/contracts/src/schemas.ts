@@ -286,6 +286,21 @@ export const signedAssetGetResponseSchema = z.object({
 });
 export type SignedAssetGetResponse = z.infer<typeof signedAssetGetResponseSchema>;
 
+export const staticMapRequestSchema = z.object({
+  address: z.string().optional(),
+  coordinates: geoPointSchema.optional(),
+  width: z.number().int().min(200).max(640).optional(),
+  height: z.number().int().min(160).max(640).optional(),
+  zoom: z.number().int().min(1).max(20).optional(),
+});
+export type StaticMapRequest = z.infer<typeof staticMapRequestSchema>;
+
+export const staticMapResponseSchema = z.object({
+  staticMapImageBase64: z.string(),
+  provider: z.enum(["google-static-maps", "fallback"]),
+});
+export type StaticMapResponse = z.infer<typeof staticMapResponseSchema>;
+
 export const mockHazardTimelineEventSchema = z.object({
   eventId: z.string(),
   atMs: z.number(),

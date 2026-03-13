@@ -3,6 +3,14 @@ function readEnv(name: string): string | undefined {
   return value ? value : undefined;
 }
 
+function hasRealConfiguredValue(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+
+  return !/^(your_|changeme|example|placeholder)/i.test(value);
+}
+
 function parseAllowedOrigins(): Set<string> {
   const configured = (readEnv("CORS_ALLOWED_ORIGINS") ?? "")
     .split(",")
@@ -51,10 +59,10 @@ export function isFrontendOnlyDeploy(): boolean {
 
 export function hasSpacesConfig(): boolean {
   return Boolean(
-    appEnv.spacesRegion &&
-      appEnv.spacesBucket &&
-      appEnv.spacesEndpoint &&
-      appEnv.spacesKey &&
-      appEnv.spacesSecret
+    hasRealConfiguredValue(appEnv.spacesRegion) &&
+      hasRealConfiguredValue(appEnv.spacesBucket) &&
+      hasRealConfiguredValue(appEnv.spacesEndpoint) &&
+      hasRealConfiguredValue(appEnv.spacesKey) &&
+      hasRealConfiguredValue(appEnv.spacesSecret)
   );
 }
