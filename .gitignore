@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Build / Next
+.next/
+out/
+output/
+build/
+dist/
+
+# Env (keep .env.example)
+.env
+.env.local
+.env.*.local
+
+# Misc
+.DS_Store
+*.pem
+*.tsbuildinfo
+*.log
+
+# Vercel
+.vercel
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

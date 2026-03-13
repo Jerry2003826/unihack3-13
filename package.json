@@ -1,0 +1,32 @@
+{
+  "name": "inspect-ai",
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "dev:api": "pnpm --filter api dev",
+    "dev": "concurrently \"pnpm dev:web\" \"pnpm dev:api\"",
+    "lint": "pnpm run lint:root && pnpm lint:web && pnpm lint:api",
+    "lint:root": "eslint playwright.config.ts vitest.config.ts tests",
+    "lint:web": "pnpm --filter web exec eslint .",
+    "lint:api": "pnpm --filter api exec eslint .",
+    "test": "pnpm run test:unit",
+    "test:unit": "vitest run",
+    "test:e2e": "playwright test",
+    "build": "pnpm -r run build",
+    "start": "concurrently \"pnpm --filter web start\" \"pnpm --filter api start\""
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@playwright/test": "^1.58.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "concurrently": "^9.2.1",
+    "eslint": "^9.39.4",
+    "fake-indexeddb": "^6.2.4",
+    "globals": "^17.4.0",
+    "jsdom": "^27.0.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.57.0",
+    "vitest": "^4.1.0"
+  }
+}

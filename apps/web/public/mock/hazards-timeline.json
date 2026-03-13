@@ -1,0 +1,57 @@
+[
+  {
+    "eventId": "mock-001",
+    "atMs": 3000,
+    "hazard": {
+      "category": "Mould",
+      "severity": "High",
+      "description": "Extensive black mould is visible along the lower wall corner.",
+      "estimatedCost": {
+        "amount": 200,
+        "currency": "AUD",
+        "reason": "Professional mould treatment and repainting."
+      },
+      "boundingBox": {
+        "x_min": 0.05,
+        "y_min": 0.70,
+        "x_max": 0.25,
+        "y_max": 0.95
+      }
+    }
+  },
+  {
+    "eventId": "mock-002",
+    "atMs": 6500,
+    "hazard": {
+      "category": "Structural",
+      "severity": "Medium",
+      "description": "Minor hairline crack in the ceiling plaster, non-structural but monitor.",
+      "boundingBox": {
+        "x_min": 0.40,
+        "y_min": 0.10,
+        "x_max": 0.60,
+        "y_max": 0.15
+      }
+    }
+  },
+  {
+    "eventId": "mock-003",
+    "atMs": 12000,
+    "hazard": {
+      "category": "Plumbing",
+      "severity": "Critical",
+      "description": "Water pooling under the bathroom sink cabinet, possible active leak.",
+      "estimatedCost": {
+        "amount": 450,
+        "currency": "AUD",
+        "reason": "Plumber callout and pipe repair."
+      },
+      "boundingBox": {
+        "x_min": 0.60,
+        "y_min": 0.60,
+        "x_max": 0.85,
+        "y_max": 0.90
+      }
+    }
+  }
+]

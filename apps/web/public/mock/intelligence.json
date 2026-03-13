@@ -1,0 +1,41 @@
+{
+  "intelligence": {
+    "address": "15 Dandenong Rd, Clayton VIC 3168",
+    "geoAnalysis": {
+      "noiseRisk": "Medium",
+      "transitScore": 74,
+      "warning": "Moderate evening traffic on the main road.",
+      "nearbyTransit": [
+        "Clayton Station - 11 min walk",
+        "Bus stop on Dandenong Rd - 4 min walk"
+      ],
+      "destinationConvenience": [
+        "Office - 33 min by public transport"
+      ]
+    },
+    "communityInsight": {
+      "summary": "Public forum discussion suggests decent access to shops and trains, but mixed opinions on evening traffic and street noise.",
+      "sentiment": "mixed",
+      "citations": [
+        {
+          "sourceId": "community-1",
+          "title": "Local discussion thread",
+          "url": "https://example.com/thread"
+        }
+      ]
+    },
+    "agencyBackground": {
+      "agencyName": "Ray White Clayton",
+      "sentimentScore": 2.8,
+      "commonComplaints": [],
+      "negotiationLeverage": "Comparable listings suggest room for negotiation.",
+      "citations": [
+        {
+          "sourceId": "agency-1",
+          "title": "Public agency review page",
+          "url": "https://example.com/agency-review"
+        }
+      ]
+    }
+  }
+}
