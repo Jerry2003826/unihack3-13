@@ -3,11 +3,12 @@ import type {
   GeoAnalysis,
   IntelligenceDepth,
 } from "@inspect-ai/contracts";
-import { geoAnalysisSchema } from "@inspect-ai/contracts";
+import { geoAnalysisSchema, sanitizeDisplayList } from "@inspect-ai/contracts";
 import { appEnv } from "@/lib/env";
 import { buildGeoFallback, scoreSnippetSentiment } from "@/lib/fallbacks";
 import { fetchJson } from "@/lib/http";
 import { geocodeAddress } from "@/lib/providers/googleMapsGeocode";
+import { fetchNearbyEssentials } from "@/lib/providers/googlePlaces";
 import { getTavilyClient } from "@/lib/providers/tavily";
 
 interface Coordinates {
@@ -161,6 +162,66 @@ function buildTransitScore(nearbyTransit: string[], destinationConvenience: stri
   return Math.max(0, Math.min(100, score));
 }
 
+function buildGeoWarning(snippets: string[], hasTransitSignals: boolean) {
+  const normalized = snippets.join(" ").toLowerCase();
+  const signals: string[] = [];
+
+  if (normalized.includes("traffic")) {
+    signals.push("traffic");
+  }
+  if (normalized.includes("construction")) {
+    signals.push("construction");
+  }
+  if (normalized.includes("noise")) {
+    signals.push("road noise");
+  }
+  if (normalized.includes("unsafe") || normalized.includes("crime")) {
+    signals.push("street safety");
+  }
+
+  const uniqueSignals = [...new Set(signals)];
+  if (uniqueSignals.length > 0) {
+    return `Public search signals mention ${uniqueSignals.join(", ")} nearby. Verify these conditions in person.`;
+  }
+
+  if (!hasTransitSignals) {
+    return "Transit options are unclear from available data.";
+  }
+
+  return undefined;
+}
+
+function buildGeoKeySignals(
+  snippets: string[],
+  nearbyTransit: string[],
+  destinationConvenience: string[],
+  nearbyEssentials: GeoAnalysis["nearbyEssentials"]
+) {
+  const normalized = snippets.join(" ").toLowerCase();
+  const signals: string[] = [];
+
+  if (normalized.includes("traffic")) {
+    signals.push("Traffic may affect peak-hour access");
+  }
+  if (normalized.includes("construction")) {
+    signals.push("Construction activity may be nearby");
+  }
+  if (normalized.includes("noise")) {
+    signals.push("Street noise should be checked at busy times");
+  }
+  if (nearbyTransit.length > 0) {
+    signals.push("Nearby public transport options were found");
+  }
+  if (destinationConvenience.length > 0) {
+    signals.push("Commute estimates are available for saved destinations");
+  }
+  if ((nearbyEssentials?.length ?? 0) > 0) {
+    signals.push("Nearby essentials were verified with Google Places");
+  }
+
+  return [...new Set(signals)].slice(0, 4);
+}
+
 export async function analyzeGeoContext(args: {
   address?: string;
   coordinates?: Coordinates;
@@ -194,36 +255,45 @@ export async function analyzeGeoContext(args: {
     };
   }
 
-  const [nearbyTransitResult, destinationResult, riskSnippets] = await Promise.allSettled([
+  const [nearbyTransitResult, destinationResult, riskSnippets, essentialsResult] = await Promise.allSettled([
     searchNearbyTransit(coordinates),
     computeDestinationConvenience(coordinates, args.targetDestinations),
     searchRiskSignals(resolvedAddress ?? `${coordinates.lat}, ${coordinates.lng}`),
+    fetchNearbyEssentials(coordinates),
   ]);
 
-  const nearbyTransit = nearbyTransitResult.status === "fulfilled" ? nearbyTransitResult.value : [];
-  const destinationConvenience = destinationResult.status === "fulfilled" ? destinationResult.value : [];
+  const nearbyTransit = sanitizeDisplayList(
+    nearbyTransitResult.status === "fulfilled" ? nearbyTransitResult.value : [],
+    { maxItems: 3, itemMaxLength: 90 }
+  );
+  const destinationConvenience = sanitizeDisplayList(
+    destinationResult.status === "fulfilled" ? destinationResult.value : [],
+    { maxItems: 3, itemMaxLength: 90 }
+  );
   const snippets = riskSnippets.status === "fulfilled" ? riskSnippets.value : [];
+  const nearbyEssentials = essentialsResult.status === "fulfilled" ? essentialsResult.value : [];
 
   const sentiment = scoreSnippetSentiment(snippets);
   const noiseRisk: GeoAnalysis["noiseRisk"] = sentiment <= -3 ? "High" : sentiment < 0 ? "Medium" : "Low";
-  const warning =
-    snippets.find((snippet) => /noise|traffic|construction|unsafe|crime/i.test(snippet)) ??
-    (nearbyTransit.length === 0 ? "Transit options are unclear from available data." : undefined);
+  const warning = buildGeoWarning(snippets, nearbyTransit.length > 0);
 
   return {
     geoAnalysis: geoAnalysisSchema.parse({
       noiseRisk,
       transitScore: buildTransitScore(nearbyTransit, destinationConvenience),
       warning,
+      keySignals: buildGeoKeySignals(snippets, nearbyTransit, destinationConvenience, nearbyEssentials),
       nearbyTransit,
       destinationConvenience,
+      nearbyEssentials,
     }),
     resolvedAddress,
     provider: appEnv.googleMapsApiKey ? "google-maps+tavily" : "tavily",
     fallbackReason:
       nearbyTransitResult.status === "rejected" ||
       destinationResult.status === "rejected" ||
-      riskSnippets.status === "rejected"
+      riskSnippets.status === "rejected" ||
+      essentialsResult.status === "rejected"
         ? "geo_partial_failure"
         : undefined,
   };

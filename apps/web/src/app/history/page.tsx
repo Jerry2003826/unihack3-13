@@ -49,6 +49,7 @@ export default function HistoryPage() {
         agency: entry.payload.agency,
         coordinates: entry.payload.coordinates,
         propertyNotes: entry.payload.propertyNotes,
+        inspectionChecklist: entry.payload.inspectionChecklist,
         preferenceProfile: entry.payload.preferenceProfile,
       });
       resetForNewInspection();
@@ -61,6 +62,7 @@ export default function HistoryPage() {
       address: entry.payload.address,
       agency: entry.payload.agency,
       coordinates: entry.payload.coordinates ?? null,
+      inspectionChecklist: entry.payload.inspectionChecklist,
       targetDestinations: entry.payload.targetDestinations,
       preferenceProfile: entry.payload.preferenceProfile ?? null,
     });

@@ -5,6 +5,7 @@ import type {
   InspectionMode,
   GeoPoint,
   DestinationPoint,
+  InspectionChecklist,
   PreferenceProfile,
   PropertyIntelligence,
 } from "@inspect-ai/contracts";
@@ -17,6 +18,7 @@ interface BeginInspectionArgs {
   targetDestinations?: DestinationPoint[];
   preferenceProfile?: PreferenceProfile | null;
   propertyNotes?: string;
+  inspectionChecklist?: InspectionChecklist | null;
   askingRent?: number | null;
 }
 
@@ -35,6 +37,7 @@ interface SessionState {
   targetDestinations: DestinationPoint[];
   preferenceProfile: PreferenceProfile | null;
   propertyNotes: string;
+  inspectionChecklist: InspectionChecklist | null;
   askingRent: number | null;
   reportId: string | null;
   isDemoMode: boolean;
@@ -63,6 +66,7 @@ export const useSessionStore = create<SessionState>()(
       targetDestinations: [],
       preferenceProfile: null,
       propertyNotes: "",
+      inspectionChecklist: null,
       askingRent: null,
       reportId: null,
       isDemoMode: false,
@@ -80,6 +84,7 @@ export const useSessionStore = create<SessionState>()(
           targetDestinations: args.targetDestinations || [],
           preferenceProfile: args.preferenceProfile || null,
           propertyNotes: args.propertyNotes || "",
+          inspectionChecklist: args.inspectionChecklist ?? null,
           askingRent: args.askingRent ?? null,
           reportId: null,
           intelligence: null,
@@ -96,6 +101,8 @@ export const useSessionStore = create<SessionState>()(
           targetDestinations: args.targetDestinations ?? state.targetDestinations,
           preferenceProfile: args.preferenceProfile === undefined ? state.preferenceProfile : args.preferenceProfile,
           propertyNotes: args.propertyNotes ?? state.propertyNotes,
+          inspectionChecklist:
+            args.inspectionChecklist === undefined ? state.inspectionChecklist : args.inspectionChecklist,
           askingRent: args.askingRent === undefined ? state.askingRent : args.askingRent,
         })),
 
@@ -137,6 +144,7 @@ export const useSessionStore = create<SessionState>()(
         targetDestinations: state.targetDestinations,
         preferenceProfile: state.preferenceProfile,
         propertyNotes: state.propertyNotes,
+        inspectionChecklist: state.inspectionChecklist,
         askingRent: state.askingRent,
         reportId: state.reportId,
         isDemoMode: publicAppConfig.demoModeEnabled ? state.isDemoMode : false,

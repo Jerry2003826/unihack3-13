@@ -110,6 +110,7 @@ export type DestinationPoint = z.infer<typeof destinationPointSchema>;
 
 export const communityInsightSchema = z.object({
   summary: z.string(),
+  highlights: z.array(z.string()).optional(),
   sentiment: z.enum(["positive", "neutral", "mixed", "negative", "unknown"]),
   citations: z.array(citationSchema),
 });
@@ -138,6 +139,7 @@ export const evidenceItemSchema = z.object({
 export type EvidenceItem = z.infer<typeof evidenceItemSchema>;
 
 export const inspectionCoverageSchema = z.object({
+  summary: z.string().optional(),
   roomsSeen: z.array(roomTypeSchema),
   missingAreas: z.array(z.string()),
   confidence: z.enum(["low", "medium", "high"]),
@@ -146,6 +148,7 @@ export const inspectionCoverageSchema = z.object({
 export type InspectionCoverage = z.infer<typeof inspectionCoverageSchema>;
 
 export const preLeaseActionGuideSchema = z.object({
+  summary: z.string().optional(),
   negotiatePoints: z.array(z.string()),
   furtherInspectionItems: z.array(z.string()),
 });
@@ -159,17 +162,137 @@ export const peoplePaperworkChecksSchema = z.object({
 });
 export type PeoplePaperworkChecks = z.infer<typeof peoplePaperworkChecksSchema>;
 
+const checklistTextFieldSchema = z.string().optional();
+
+export const inspectionChecklistSchema = z.object({
+  utilities: z
+    .object({
+      hotWater: checklistTextFieldSchema,
+      waterPressure: checklistTextFieldSchema,
+      drainage: checklistTextFieldSchema,
+      powerPoints: checklistTextFieldSchema,
+      heatingCooling: checklistTextFieldSchema,
+      mobileSignal: checklistTextFieldSchema,
+      internetNbn: checklistTextFieldSchema,
+      nbnLocation: checklistTextFieldSchema,
+    })
+    .optional(),
+  security: z
+    .object({
+      doorLocks: checklistTextFieldSchema,
+      intercom: checklistTextFieldSchema,
+      smokeAlarm: checklistTextFieldSchema,
+      nightEntryRoute: checklistTextFieldSchema,
+      parcelRoom: checklistTextFieldSchema,
+      entryAccess: checklistTextFieldSchema,
+      keycardInventory: checklistTextFieldSchema,
+    })
+    .optional(),
+  noise: z
+    .object({
+      weekdayMorning: checklistTextFieldSchema,
+      lateNight: checklistTextFieldSchema,
+      weekend: checklistTextFieldSchema,
+      bedroomClosedWindows: checklistTextFieldSchema,
+      balconyNoise: checklistTextFieldSchema,
+    })
+    .optional(),
+  kitchenBathroom: z
+    .object({
+      toiletFlush: checklistTextFieldSchema,
+      hotColdTaps: checklistTextFieldSchema,
+      washerDryer: checklistTextFieldSchema,
+      kitchenExhaust: checklistTextFieldSchema,
+      bathroomVentilation: checklistTextFieldSchema,
+      dampness: checklistTextFieldSchema,
+    })
+    .optional(),
+  livability: z
+    .object({
+      wardrobeStorage: checklistTextFieldSchema,
+      kitchenStorage: checklistTextFieldSchema,
+      fridgePlacement: checklistTextFieldSchema,
+      bulkyItemsStorage: checklistTextFieldSchema,
+      bedDeskFit: checklistTextFieldSchema,
+      workFromHomeFit: checklistTextFieldSchema,
+      twoPersonFit: checklistTextFieldSchema,
+    })
+    .optional(),
+  leaseCosts: z
+    .object({
+      furnitureMaintenance: checklistTextFieldSchema,
+      utilityResponsibility: checklistTextFieldSchema,
+      hiddenFees: checklistTextFieldSchema,
+      petsPolicy: checklistTextFieldSchema,
+      subletBreakLease: checklistTextFieldSchema,
+      rentIncreaseHistory: checklistTextFieldSchema,
+      bondHandling: checklistTextFieldSchema,
+    })
+    .optional(),
+  buildingManagement: z
+    .object({
+      managerResponse: checklistTextFieldSchema,
+      repairTurnaround: checklistTextFieldSchema,
+      facilityBooking: checklistTextFieldSchema,
+      visitorParking: checklistTextFieldSchema,
+      bulkyWaste: checklistTextFieldSchema,
+      mailboxParcelRoom: checklistTextFieldSchema,
+    })
+    .optional(),
+  pestsHiddenIssues: z
+    .object({
+      pests: checklistTextFieldSchema,
+      cabinetUnderSink: checklistTextFieldSchema,
+      windowSeals: checklistTextFieldSchema,
+      bathroomSealant: checklistTextFieldSchema,
+      skirtingFloorEdges: checklistTextFieldSchema,
+    })
+    .optional(),
+  entryCondition: z
+    .object({
+      conditionPhotosTaken: checklistTextFieldSchema,
+      electricalSafetyCheck: checklistTextFieldSchema,
+      gasSafetyCheck: checklistTextFieldSchema,
+      inventoryItems: z.array(z.string()).optional(),
+      renterDisagreements: z.array(z.string()).optional(),
+    })
+    .optional(),
+});
+export type InspectionChecklist = z.infer<typeof inspectionChecklistSchema>;
+
+export const nearbyPlaceSchema = z.object({
+  placeId: z.string().optional(),
+  name: z.string(),
+  category: z.string(),
+  address: z.string().optional(),
+  distanceMeters: z.number().optional(),
+  businessStatus: z.string().optional(),
+  rating: z.number().optional(),
+  userRatingCount: z.number().optional(),
+  openNowText: z.string().optional(),
+  phoneNumber: z.string().optional(),
+  googleMapsUri: z.string().optional(),
+  accessibilityHighlights: z.array(z.string()).optional(),
+  parkingHighlights: z.array(z.string()).optional(),
+  editorialSummary: z.string().optional(),
+});
+export type NearbyPlace = z.infer<typeof nearbyPlaceSchema>;
+
 export const geoAnalysisSchema = z.object({
   noiseRisk: noiseRiskSchema,
   transitScore: z.number(),
   warning: z.string().optional(),
+  keySignals: z.array(z.string()).optional(),
   nearbyTransit: z.array(z.string()),
   destinationConvenience: z.array(z.string()),
+  nearbyEssentials: z.array(nearbyPlaceSchema).optional(),
 });
 export type GeoAnalysis = z.infer<typeof geoAnalysisSchema>;
 
 export const agencyBackgroundSchema = z.object({
   agencyName: z.string(),
+  summary: z.string().optional(),
+  highlights: z.array(z.string()).optional(),
   sentimentScore: z.number(),
   commonComplaints: z.array(z.string()),
   negotiationLeverage: z.string(),
@@ -203,6 +326,7 @@ export const reportSnapshotSchema = z.object({
     agency: z.string().optional(),
     coordinates: geoPointSchema.optional(),
     propertyNotes: z.string().optional(),
+    inspectionChecklist: inspectionChecklistSchema.optional(),
     targetDestinations: z.array(destinationPointSchema).optional(),
     preferenceProfile: preferenceProfileSchema.optional(),
   }),
@@ -271,6 +395,7 @@ export const negotiateRequestSchema = z.object({
   inspectionMode: inspectionModeSchema,
   hazards: z.array(hazardSchema),
   intelligence: propertyIntelligenceSchema.optional(),
+  inspectionChecklist: inspectionChecklistSchema.optional(),
   preferenceProfile: preferenceProfileSchema.optional(),
 });
 export type NegotiateRequest = z.infer<typeof negotiateRequestSchema>;
@@ -458,6 +583,7 @@ export const searchHistoryEntrySchema = z.object({
     agency: z.string().optional(),
     coordinates: geoPointSchema.optional(),
     propertyNotes: z.string().optional(),
+    inspectionChecklist: inspectionChecklistSchema.optional(),
     targetDestinations: z.array(destinationPointSchema).optional(),
     preferenceProfile: preferenceProfileSchema.optional(),
     comparisonId: z.string().optional(),

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import type {
   AsyncStatus,
@@ -15,6 +15,7 @@ import type {
   StaticMapResponse,
 } from "@inspect-ai/contracts";
 import {
+  formatRoomTypeLabel,
   knowledgeQueryResponseSchema,
   intelligenceResponseSchema,
   negotiateResponseSchema,
@@ -37,6 +38,7 @@ import {
   updateReportSnapshot,
 } from "@/lib/report-snapshot/reportSnapshotStore";
 import { calculatePropertyRiskScore, getRiskDrivers } from "@/lib/scoring";
+import { getFilledInspectionChecklistSections } from "@/lib/inspectionChecklist";
 import { useHazardStore } from "@/store/useHazardStore";
 import { useSessionStore } from "@/store/useSessionStore";
 import { ArrowLeft, FileDown, FileImage, Loader2, ShieldAlert } from "lucide-react";
@@ -45,7 +47,9 @@ import { toast } from "sonner";
 const RECOMMENDATION_FALLBACK =
   "Recommendation unavailable. Proceed with a standard inspection checklist before signing.";
 const RECOMMENDATION_FALLBACK_NOTICE =
-  "Recommendation fallback in use. Showing heuristic guidance because structured AI output was unavailable.";
+  "Using a concise fallback recommendation while the full structured advice is unavailable.";
+const DEEP_INTELLIGENCE_FALLBACK_NOTICE =
+  "Using a shorter background summary for now. Core risk and action guidance are still available.";
 
 function isValidReportId(value: string) {
   return /^[a-zA-Z0-9-]{8,128}$/.test(value);
@@ -97,6 +101,18 @@ function getRiskTone(score: number) {
   return "text-destructive";
 }
 
+function formatDistanceMeters(distanceMeters?: number) {
+  if (!distanceMeters || Number.isNaN(distanceMeters)) {
+    return null;
+  }
+
+  if (distanceMeters >= 1000) {
+    return `${(distanceMeters / 1000).toFixed(1)} km away`;
+  }
+
+  return `${Math.round(distanceMeters)} m away`;
+}
+
 function buildRecoverySnapshot(reportId: string): ReportSnapshot | null {
   const session = useSessionStore.getState();
   const hazards = useHazardStore.getState().hazards;
@@ -115,6 +131,7 @@ function buildRecoverySnapshot(reportId: string): ReportSnapshot | null {
       agency: session.agency || undefined,
       coordinates: session.coordinates || undefined,
       propertyNotes: session.propertyNotes || undefined,
+      inspectionChecklist: session.inspectionChecklist || undefined,
       targetDestinations: session.targetDestinations,
       preferenceProfile: session.preferenceProfile || undefined,
     },
@@ -213,6 +230,23 @@ function ThumbnailPreview({
     <div className="flex h-full w-full items-center justify-center bg-muted text-[11px] text-muted-foreground">
       Image unavailable
     </div>
+  );
+}
+
+function ExpandableDetails({
+  label = "View details",
+  children,
+}: {
+  label?: string;
+  children: ReactNode;
+}) {
+  return (
+    <details className="rounded-xl border border-border/70 bg-muted/20 px-4 py-3">
+      <summary className="cursor-pointer list-none text-sm font-medium text-foreground">
+        {label}
+      </summary>
+      <div className="mt-3">{children}</div>
+    </details>
   );
 }
 
@@ -379,8 +413,9 @@ export default function ReportPage() {
           if (controller.signal.aborted) {
             return;
           }
-          setDeepStatus("error");
-          setLazyError(`Deep intelligence failed: ${getErrorMessage(error)}`);
+          setDeepStatus("fallback");
+          setLazyError(DEEP_INTELLIGENCE_FALLBACK_NOTICE);
+          console.warn("Deep intelligence fallback", error);
         }
       }
 
@@ -395,6 +430,7 @@ export default function ReportPage() {
             inspectionMode: currentSnapshot.inputs.mode,
             hazards: currentSnapshot.hazards,
             intelligence: latestIntelligence ?? currentSnapshot.intelligence,
+            inspectionChecklist: currentSnapshot.inputs.inspectionChecklist,
             preferenceProfile: currentSnapshot.inputs.preferenceProfile,
           },
           parse: (value) => negotiateResponseSchema.parse(value),
@@ -417,7 +453,8 @@ export default function ReportPage() {
         await applyRecommendationFallback(latestIntelligence ?? currentSnapshot.intelligence);
         setRecommendationStatus("fallback");
         setLazyError(RECOMMENDATION_FALLBACK_NOTICE);
-        toast.warning(`Recommendation fallback in use: ${getErrorMessage(error)}`);
+        toast.info("Using concise fallback guidance while the full recommendation is unavailable.");
+        console.warn("Recommendation fallback", error);
       }
     }
 
@@ -608,6 +645,13 @@ export default function ReportPage() {
     return getRiskDrivers(snapshot.hazards);
   }, [snapshot]);
 
+  const checklistSections = useMemo(
+    () => getFilledInspectionChecklistSections(snapshot?.inputs.inspectionChecklist),
+    [snapshot?.inputs.inspectionChecklist]
+  );
+
+  const nearbyEssentials = snapshot?.intelligence?.geoAnalysis?.nearbyEssentials ?? [];
+
   if (isBooting || !snapshot || !riskState) {
     return <ReportLoadingState />;
   }
@@ -737,11 +781,15 @@ export default function ReportPage() {
                     <div className="pb-1 text-sm text-muted-foreground">out of 100</div>
                   </div>
                   <p className="text-sm text-muted-foreground">{snapshot.fitScore.summary}</p>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    {snapshot.fitScore.drivers.map((driver) => (
-                      <div key={driver}>{driver}</div>
-                    ))}
-                  </div>
+                  {snapshot.fitScore.drivers.length > 0 ? (
+                    <ExpandableDetails label="Fit score details">
+                      <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
+                        {snapshot.fitScore.drivers.map((driver) => (
+                          <li key={driver}>{driver}</li>
+                        ))}
+                      </ul>
+                    </ExpandableDetails>
+                  ) : null}
                 </>
               ) : (
                 <ReportSectionSkeleton copy="Loading fit score after recommendation completes..." />
@@ -763,11 +811,15 @@ export default function ReportPage() {
                     </Badge>
                     <div className="text-sm text-muted-foreground">{snapshot.recommendation.summary}</div>
                   </div>
-                  <div className="grid gap-2 text-sm text-muted-foreground">
-                    {snapshot.recommendation.reasons.map((reason) => (
-                      <div key={reason}>{reason}</div>
-                    ))}
-                  </div>
+                  {snapshot.recommendation.reasons.length > 0 ? (
+                    <ExpandableDetails label="Decision details">
+                      <ul className="grid list-disc gap-2 pl-5 text-sm text-muted-foreground">
+                        {snapshot.recommendation.reasons.map((reason) => (
+                          <li key={reason}>{reason}</li>
+                        ))}
+                      </ul>
+                    </ExpandableDetails>
+                  ) : null}
                 </>
               ) : recommendationStatus === "error" ? (
                 <div className="rounded-xl border border-border/70 bg-muted/30 p-4 text-sm text-muted-foreground">
@@ -809,9 +861,9 @@ export default function ReportPage() {
                           <Badge variant="outline" className="border-border/70 text-muted-foreground">
                             {hazard.category}
                           </Badge>
-                          {hazard.roomType ? (
+                          {hazard.roomType && hazard.roomType !== "unknown" ? (
                             <Badge variant="outline" className="border-border/70 text-muted-foreground">
-                              {hazard.roomType}
+                              {formatRoomTypeLabel(hazard.roomType)}
                             </Badge>
                           ) : null}
                         </div>
@@ -859,22 +911,105 @@ export default function ReportPage() {
                       Transit: {snapshot.intelligence.geoAnalysis.transitScore}
                     </Badge>
                   </div>
-                  {snapshot.intelligence.geoAnalysis.warning ? (
-                    <div>{snapshot.intelligence.geoAnalysis.warning}</div>
-                  ) : null}
-                  <div className="space-y-2">
-                    {snapshot.intelligence.geoAnalysis.nearbyTransit.length > 0 ? (
-                      snapshot.intelligence.geoAnalysis.nearbyTransit.map((item) => <div key={item}>{item}</div>)
-                    ) : (
-                      <div>Nearby transit details are limited.</div>
-                    )}
+                  <div>
+                    {snapshot.intelligence.geoAnalysis.warning ??
+                      "Transit and local condition signals are summarized below."}
                   </div>
-                  {snapshot.intelligence.geoAnalysis.destinationConvenience.length > 0 ? (
-                    <div className="space-y-2 border-t border-border/60 pt-3">
-                      {snapshot.intelligence.geoAnalysis.destinationConvenience.map((item) => (
-                        <div key={item}>{item}</div>
-                      ))}
+                  {nearbyEssentials.length > 0 ? (
+                    <div className="grid gap-3">
+                      <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                        Nearby Essentials
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {nearbyEssentials.map((place) => (
+                          <div key={`${place.name}-${place.category}`} className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="space-y-1">
+                                <div className="text-sm font-medium text-foreground">{place.name}</div>
+                                <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                                  {place.category}
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap gap-2 text-xs">
+                                {place.businessStatus ? (
+                                  <Badge variant="outline" className="border-border/70 text-foreground">
+                                    {place.businessStatus}
+                                  </Badge>
+                                ) : null}
+                                {place.rating ? (
+                                  <Badge variant="outline" className="border-border/70 text-foreground">
+                                    {place.rating.toFixed(1)} / 5
+                                    {place.userRatingCount ? ` · ${place.userRatingCount} reviews` : ""}
+                                  </Badge>
+                                ) : null}
+                              </div>
+                            </div>
+                            <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+                              {place.address ? <div>{place.address}</div> : null}
+                              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                                {formatDistanceMeters(place.distanceMeters) ? (
+                                  <span>{formatDistanceMeters(place.distanceMeters)}</span>
+                                ) : null}
+                                {place.openNowText ? <span>{place.openNowText}</span> : null}
+                                {place.phoneNumber ? <span>{place.phoneNumber}</span> : null}
+                              </div>
+                              {place.editorialSummary ? (
+                                <div className="text-sm text-muted-foreground">{place.editorialSummary}</div>
+                              ) : null}
+                              {place.accessibilityHighlights?.length ? (
+                                <div className="text-xs text-muted-foreground">
+                                  Accessibility: {place.accessibilityHighlights.join(" · ")}
+                                </div>
+                              ) : null}
+                              {place.parkingHighlights?.length ? (
+                                <div className="text-xs text-muted-foreground">
+                                  Parking: {place.parkingHighlights.join(" · ")}
+                                </div>
+                              ) : null}
+                              {place.googleMapsUri ? (
+                                <a
+                                  href={place.googleMapsUri}
+                                  target="_blank"
+                                  rel="noreferrer noopener"
+                                  className="inline-block text-xs text-accent underline-offset-4 hover:underline"
+                                >
+                                  View on Google Maps
+                                </a>
+                              ) : null}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
+                  ) : null}
+                  {(snapshot.intelligence.geoAnalysis.keySignals?.length ||
+                    snapshot.intelligence.geoAnalysis.nearbyTransit.length > 0 ||
+                    snapshot.intelligence.geoAnalysis.destinationConvenience.length > 0) ? (
+                    <ExpandableDetails label="Area details">
+                      <div className="space-y-4 text-sm text-muted-foreground">
+                        {snapshot.intelligence.geoAnalysis.keySignals?.length ? (
+                          <ul className="list-disc space-y-2 pl-5">
+                            {snapshot.intelligence.geoAnalysis.keySignals.map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        <ul className="list-disc space-y-2 pl-5">
+                          {snapshot.intelligence.geoAnalysis.nearbyTransit.length > 0 ? (
+                            snapshot.intelligence.geoAnalysis.nearbyTransit.map((item) => <li key={item}>{item}</li>)
+                          ) : (
+                            <li>Nearby transit details are limited.</li>
+                          )}
+                        </ul>
+                        {snapshot.intelligence.geoAnalysis.destinationConvenience.length > 0 ? (
+                          <ul className="list-disc space-y-2 border-t border-border/60 pt-3 pl-5">
+                            {snapshot.intelligence.geoAnalysis.destinationConvenience.map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </div>
+                    </ExpandableDetails>
                   ) : null}
                 </>
               ) : (
@@ -895,23 +1030,37 @@ export default function ReportPage() {
                     Sentiment: {snapshot.intelligence.communityInsight.sentiment}
                   </Badge>
                   <div>{snapshot.intelligence.communityInsight.summary}</div>
-                  <div className="space-y-2 text-xs text-muted-foreground">
-                    {snapshot.intelligence.communityInsight.citations.length > 0 ? (
-                      snapshot.intelligence.communityInsight.citations.map((citation) => (
-                        <a
-                          key={citation.sourceId}
-                          href={citation.url}
-                          target="_blank"
-                          rel="noreferrer noopener"
-                          className="block break-words text-accent underline-offset-4 hover:underline"
-                        >
-                          {citation.title}
-                        </a>
-                      ))
-                    ) : (
-                      <div>No public citations were retained for this summary.</div>
-                    )}
-                  </div>
+                  {(snapshot.intelligence.communityInsight.highlights?.length ||
+                    snapshot.intelligence.communityInsight.citations.length > 0) ? (
+                    <ExpandableDetails label="Community details">
+                      <div className="space-y-4">
+                        {snapshot.intelligence.communityInsight.highlights?.length ? (
+                          <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
+                            {snapshot.intelligence.communityInsight.highlights.map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        <div className="space-y-2 text-xs text-muted-foreground">
+                          {snapshot.intelligence.communityInsight.citations.length > 0 ? (
+                            snapshot.intelligence.communityInsight.citations.map((citation) => (
+                              <a
+                                key={citation.sourceId}
+                                href={citation.url}
+                                target="_blank"
+                                rel="noreferrer noopener"
+                                className="block break-words text-accent underline-offset-4 hover:underline"
+                              >
+                                {citation.title}
+                              </a>
+                            ))
+                          ) : (
+                            <div>No public citations were retained for this summary.</div>
+                          )}
+                        </div>
+                      </div>
+                    </ExpandableDetails>
+                  ) : null}
                 </>
               ) : (
                 <ReportSectionSkeleton copy="Loading community research..." />
@@ -935,16 +1084,52 @@ export default function ReportPage() {
                       Sentiment {snapshot.intelligence.agencyBackground.sentimentScore.toFixed(1)}/5
                     </Badge>
                   </div>
-                  <div>{snapshot.intelligence.agencyBackground.negotiationLeverage}</div>
-                  <div className="space-y-2">
-                    {snapshot.intelligence.agencyBackground.commonComplaints.length > 0 ? (
-                      snapshot.intelligence.agencyBackground.commonComplaints.map((complaint) => (
-                        <div key={complaint}>{complaint}</div>
-                      ))
-                    ) : (
-                      <div>No common public complaint themes were retained.</div>
-                    )}
+                  <div>
+                    {snapshot.intelligence.agencyBackground.summary ??
+                      snapshot.intelligence.agencyBackground.negotiationLeverage}
                   </div>
+                  {(snapshot.intelligence.agencyBackground.highlights?.length ||
+                    snapshot.intelligence.agencyBackground.commonComplaints.length > 0 ||
+                    snapshot.intelligence.agencyBackground.citations.length > 0) ? (
+                    <ExpandableDetails label="Agency details">
+                      <div className="space-y-4">
+                        <div className="text-sm text-muted-foreground">
+                          {snapshot.intelligence.agencyBackground.negotiationLeverage}
+                        </div>
+                        {snapshot.intelligence.agencyBackground.highlights?.length ? (
+                          <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
+                            {snapshot.intelligence.agencyBackground.highlights.map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
+                          {snapshot.intelligence.agencyBackground.commonComplaints.length > 0 ? (
+                            snapshot.intelligence.agencyBackground.commonComplaints.map((complaint) => (
+                              <li key={complaint}>{complaint}</li>
+                            ))
+                          ) : (
+                            <li>No common public complaint themes were retained.</li>
+                          )}
+                        </ul>
+                        {snapshot.intelligence.agencyBackground.citations.length > 0 ? (
+                          <div className="space-y-2 text-xs text-muted-foreground">
+                            {snapshot.intelligence.agencyBackground.citations.map((citation) => (
+                              <a
+                                key={citation.sourceId}
+                                href={citation.url}
+                                target="_blank"
+                                rel="noreferrer noopener"
+                                className="block break-words text-accent underline-offset-4 hover:underline"
+                              >
+                                {citation.title}
+                              </a>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    </ExpandableDetails>
+                  ) : null}
                 </>
               ) : (
                 <ReportSectionSkeleton copy="Loading agency background..." />
@@ -989,20 +1174,29 @@ export default function ReportPage() {
                     <Badge variant="outline" className="border-border/70 text-foreground">
                       Confidence: {snapshot.inspectionCoverage.confidence}
                     </Badge>
-                    {snapshot.inspectionCoverage.roomsSeen.map((room) => (
+                    {snapshot.inspectionCoverage.roomsSeen.filter((room) => room !== "unknown").map((room) => (
                       <Badge key={room} variant="outline" className="border-border/70 text-foreground">
-                        {room}
+                        {formatRoomTypeLabel(room)}
                       </Badge>
                     ))}
                   </div>
-                  {snapshot.inspectionCoverage.warning ? <div>{snapshot.inspectionCoverage.warning}</div> : null}
-                  <div className="space-y-2">
-                    {snapshot.inspectionCoverage.missingAreas.length > 0 ? (
-                      snapshot.inspectionCoverage.missingAreas.map((item) => <div key={item}>{item}</div>)
-                    ) : (
-                      <div>No major coverage gaps were flagged.</div>
-                    )}
+                  <div>
+                    {snapshot.inspectionCoverage.summary ??
+                      snapshot.inspectionCoverage.warning ??
+                      "Inspection coverage signals are summarized below."}
                   </div>
+                  {snapshot.inspectionCoverage.warning ? (
+                    <div className="text-xs text-muted-foreground">{snapshot.inspectionCoverage.warning}</div>
+                  ) : null}
+                  {snapshot.inspectionCoverage.missingAreas.length > 0 ? (
+                    <ExpandableDetails label="Coverage details">
+                      <ul className="list-disc space-y-2 pl-5">
+                        {snapshot.inspectionCoverage.missingAreas.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </ExpandableDetails>
+                  ) : null}
                 </>
               ) : (
                 <ReportSectionSkeleton copy="Assessing inspection coverage..." />
@@ -1015,29 +1209,37 @@ export default function ReportPage() {
               <CardDescription>10. Pre-lease Action Guide</CardDescription>
               <CardTitle>What to negotiate or re-check next</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-4 lg:grid-cols-2">
+            <CardContent className="space-y-4">
               {snapshot.preLeaseActionGuide ? (
                 <>
-                  <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
-                    <div className="text-sm font-medium text-foreground">Negotiation points</div>
-                    <div className="space-y-2 text-sm text-muted-foreground">
-                      {snapshot.preLeaseActionGuide.negotiatePoints.length > 0 ? (
-                        snapshot.preLeaseActionGuide.negotiatePoints.map((point) => <div key={point}>{point}</div>)
-                      ) : (
-                        <div>No specific negotiation points have been generated.</div>
-                      )}
-                    </div>
+                  <div className="text-sm text-muted-foreground">
+                    {snapshot.preLeaseActionGuide.summary ??
+                      "Use the next-step checklist below before committing to this property."}
                   </div>
-                  <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
-                    <div className="text-sm font-medium text-foreground">Further inspection items</div>
-                    <div className="space-y-2 text-sm text-muted-foreground">
-                      {snapshot.preLeaseActionGuide.furtherInspectionItems.length > 0 ? (
-                        snapshot.preLeaseActionGuide.furtherInspectionItems.map((item) => <div key={item}>{item}</div>)
-                      ) : (
-                        <div>No further inspection items have been generated.</div>
-                      )}
+                  <ExpandableDetails label="Action guide details">
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
+                        <div className="text-sm font-medium text-foreground">Negotiation points</div>
+                        <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
+                          {snapshot.preLeaseActionGuide.negotiatePoints.length > 0 ? (
+                            snapshot.preLeaseActionGuide.negotiatePoints.map((point) => <li key={point}>{point}</li>)
+                          ) : (
+                            <li>No specific negotiation points have been generated.</li>
+                          )}
+                        </ul>
+                      </div>
+                      <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
+                        <div className="text-sm font-medium text-foreground">Further inspection items</div>
+                        <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
+                          {snapshot.preLeaseActionGuide.furtherInspectionItems.length > 0 ? (
+                            snapshot.preLeaseActionGuide.furtherInspectionItems.map((item) => <li key={item}>{item}</li>)
+                          ) : (
+                            <li>No further inspection items have been generated.</li>
+                          )}
+                        </ul>
+                      </div>
                     </div>
-                  </div>
+                  </ExpandableDetails>
                 </>
               ) : (
                 <ReportSectionSkeleton copy="Preparing next-step checklist..." className="lg:col-span-2" />
@@ -1047,7 +1249,51 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85 xl:col-span-2">
             <CardHeader>
-              <CardDescription>11. Knowledge Base Guidance</CardDescription>
+              <CardDescription>11. Inspection Checklist & Entry Notes</CardDescription>
+              <CardTitle>Structured notes captured during the inspection</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {checklistSections.length > 0 ? (
+                <>
+                  <div className="text-sm text-muted-foreground">
+                    These notes reflect structured renter observations about utilities, safety, livability, lease terms,
+                    and entry-condition details. They are also fed into recommendation and paperwork guidance.
+                  </div>
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    {checklistSections.map((section) => (
+                      <div key={section.title} className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                        <div className="text-sm font-medium text-foreground">{section.title}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">{section.description}</div>
+                        <div className="mt-4 space-y-3">
+                          {section.fields.map((field) => (
+                            <div key={`${section.title}-${field.label}`} className="space-y-1">
+                              <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                                {field.label}
+                              </div>
+                              <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                                {field.values.map((value) => (
+                                  <li key={value}>{value}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
+                  No structured inspection notes were captured for this report. Add them from Live Inspection or Manual
+                  Upload to improve recommendation quality and paperwork checks.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70 bg-card/85 xl:col-span-2">
+            <CardHeader>
+              <CardDescription>12. Knowledge Base Guidance</CardDescription>
               <CardTitle>Extra renter guidance from the external knowledge base</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-3">
@@ -1073,36 +1319,36 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85 xl:col-span-2">
             <CardHeader>
-              <CardDescription>12. People & Paperwork Checks</CardDescription>
+              <CardDescription>13. People & Paperwork Checks</CardDescription>
               <CardTitle>Compliant due-diligence items before you commit</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 lg:grid-cols-2">
               <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
                 <div className="text-sm font-medium text-foreground">Checklist</div>
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  {snapshot.paperworkChecks?.checklist.map((item) => <div key={item}>{item}</div>)}
-                </div>
+                <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
+                  {snapshot.paperworkChecks?.checklist.map((item) => <li key={item}>{item}</li>)}
+                </ul>
               </div>
               <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
                 <div className="text-sm font-medium text-foreground">Risk Flags</div>
-                <div className="space-y-2 text-sm text-muted-foreground">
+                <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
                   {snapshot.paperworkChecks?.riskFlags.length ? (
-                    snapshot.paperworkChecks.riskFlags.map((item) => <div key={item}>{item}</div>)
+                    snapshot.paperworkChecks.riskFlags.map((item) => <li key={item}>{item}</li>)
                   ) : (
-                    <div>No extra paperwork red flags were identified from the current snapshot.</div>
+                    <li>No extra paperwork red flags were identified from the current snapshot.</li>
                   )}
-                </div>
+                </ul>
                 <div className="pt-2 text-sm font-medium text-foreground">Required Documents</div>
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  {snapshot.paperworkChecks?.requiredDocuments.map((item) => <div key={item}>{item}</div>)}
-                </div>
+                <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
+                  {snapshot.paperworkChecks?.requiredDocuments.map((item) => <li key={item}>{item}</li>)}
+                </ul>
               </div>
             </CardContent>
           </Card>
 
           <Card className="border-border/70 bg-card/85 xl:col-span-2">
             <CardHeader>
-              <CardDescription>13. Export Actions</CardDescription>
+              <CardDescription>14. Export Actions</CardDescription>
               <CardTitle>Export a stable PDF or share poster</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-3">

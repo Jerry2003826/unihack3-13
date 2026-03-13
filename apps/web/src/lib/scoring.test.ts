@@ -56,4 +56,12 @@ describe("scoring", () => {
     expect(riskState.drivers).toContain("2 high severity issues");
     expect(riskState.drivers).toContain("Top concern: Mould in bathroom");
   });
+
+  it("humanizes unknown room labels in risk drivers", () => {
+    const riskState = getRiskDrivers([
+      createHazard({ severity: "Low", category: "Structural", roomType: "unknown" }),
+    ]);
+
+    expect(riskState.drivers).toContain("Top concern: Structural in general area");
+  });
 });

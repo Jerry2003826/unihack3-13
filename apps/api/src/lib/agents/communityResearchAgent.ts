@@ -1,5 +1,5 @@
 import type { CommunityInsight, IntelligenceDepth } from "@inspect-ai/contracts";
-import { communityInsightSchema } from "@inspect-ai/contracts";
+import { communityInsightSchema, sanitizeDisplayList, sanitizeDisplayText } from "@inspect-ai/contracts";
 import { callGeminiJson, sanitizeCitations, type SourceCatalogItem } from "@/lib/ai";
 import { appEnv } from "@/lib/env";
 import { buildCommunityFallback, scoreSnippetSentiment } from "@/lib/fallbacks";
@@ -26,6 +26,28 @@ function buildCatalog(results: Array<{ title: string; url: string; content: stri
     snippet: result.content,
     provider: "tavily",
   }));
+}
+
+function buildFallbackCommunitySummary(args: {
+  address?: string;
+  titles: string[];
+  snippets: string[];
+}) {
+  const titleHighlights = sanitizeDisplayList(args.titles, { maxItems: 2, itemMaxLength: 72 });
+  const snippetSummary = sanitizeDisplayText(args.snippets.join(" "), {
+    maxLength: 180,
+    maxSegments: 2,
+  });
+
+  if (titleHighlights.length > 0) {
+    return `Public discussion near ${args.address ?? "this property"} references ${titleHighlights.join(" and ")}. Treat this as incomplete and verify local street conditions in person.`;
+  }
+
+  if (snippetSummary) {
+    return `${snippetSummary} Verify noise, traffic, and street activity in person before signing.`;
+  }
+
+  return buildCommunityFallback({ address: args.address }).summary;
 }
 
 export async function researchCommunity(args: {
@@ -86,13 +108,18 @@ export async function researchCommunity(args: {
 
     try {
       const structured = await callGeminiJson({
-        model: appEnv.geminiIntelligenceModel,
+        model: appEnv.geminiGroundedModel,
         schema: communityInsightSchema,
         timeoutMs: geminiTimeoutMs,
         prompt: [
           `Summarize public rental-living signals for "${locationLabel}".`,
           "Differentiate between factual signals and subjective opinions.",
           "Return only JSON.",
+          "The summary must be renter-facing, concise, and readable in 1-2 sentences.",
+          "Keep summary under 220 characters.",
+          "If possible, include 2-4 short highlights under 90 characters each.",
+          "Do not include review widgets, business directory fragments, opening hours, rating controls, or raw scraped page text.",
+          "Do not list more than one address unless it is directly relevant to the property being assessed.",
           "You must cite only from the provided source catalog, using exact sourceId, title, and url values.",
           JSON.stringify({ sourceCatalog: catalog }, null, 2),
         ].join("\n"),
@@ -111,11 +138,19 @@ export async function researchCommunity(args: {
 
       return {
         communityInsight: {
-          summary: snippets
-            .slice(0, 3)
-            .filter(Boolean)
-            .join(" ")
-            .slice(0, 420) || buildCommunityFallback({ address: args.address }).summary,
+          summary: buildFallbackCommunitySummary({
+            address: args.address,
+            titles: catalog.map((item) => item.title),
+            snippets,
+          }),
+          highlights: sanitizeDisplayList(
+            [
+              ...catalog.map((item) => item.title),
+              "Verify the street at peak traffic time",
+              "Cross-check local renter forums",
+            ],
+            { maxItems: 4, itemMaxLength: 90 }
+          ),
           sentiment:
             sentimentScore <= -3
               ? "negative"

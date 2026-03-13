@@ -63,12 +63,18 @@ export async function analyzeAgencyBackground(args: {
 
     try {
       const structured = await callGeminiJson({
-        model: appEnv.geminiIntelligenceModel,
+        model: appEnv.geminiGroundedModel,
         schema: agencyBackgroundSchema,
         timeoutMs: geminiTimeoutMs,
         prompt: [
           `Summarize public reputation signals for the agency "${agency}".`,
           "Return only JSON.",
+          "agencyName must be a clean agency label, not a scraped directory fragment.",
+          "If possible, include a short renter-facing summary under 180 characters.",
+          "If possible, include 2-4 short highlights under 90 characters each.",
+          "commonComplaints must be 0-3 short phrases, each under 6 words.",
+          "negotiationLeverage must be 1-2 short renter-facing sentences, under 170 characters.",
+          "Do not include opening hours, review form text, rating widgets, or copied directory listings.",
           "You must cite only from the provided source catalog, using exact sourceId, title, and url values.",
           "Do not invent links.",
           JSON.stringify({ sourceCatalog: catalog }, null, 2),
@@ -91,6 +97,14 @@ export async function analyzeAgencyBackground(args: {
       return {
         agencyBackground: {
           agencyName: agency,
+          summary:
+            commonComplaints.length > 0
+              ? `Public review signals are mixed. Document response times and repair commitments before signing.`
+              : "Public review data is limited, so written commitments matter more than verbal assurances.",
+          highlights: sanitizeCitations(
+            catalog.slice(0, 2).map(({ sourceId, title, url }) => ({ sourceId, title, url })),
+            catalog
+          ).map((citation) => citation.title),
           sentimentScore,
           commonComplaints,
           negotiationLeverage:

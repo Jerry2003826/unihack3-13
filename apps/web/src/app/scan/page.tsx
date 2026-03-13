@@ -97,6 +97,7 @@ export default function ScanPage() {
           agency: sessionStore.agency,
           coordinates: sessionStore.coordinates || undefined,
           propertyNotes: sessionStore.propertyNotes,
+          inspectionChecklist: sessionStore.inspectionChecklist || undefined,
           targetDestinations: sessionStore.targetDestinations,
           preferenceProfile: sessionStore.preferenceProfile || undefined,
         },

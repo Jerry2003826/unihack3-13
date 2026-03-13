@@ -6,23 +6,34 @@ import { saveSearchHistory } from "@/lib/history/historyStore";
 import { requestCurrentLocation, reverseGeocodeCoordinates } from "@/lib/location";
 import { useSessionStore } from "@/store/useSessionStore";
 import { useHazardStore } from "@/store/useHazardStore";
+import { InspectionChecklistEditor } from "@/components/inspection/InspectionChecklistEditor";
 import { FallbackTrigger } from "@/components/shared/FallbackTrigger";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import type { AsyncStatus, GeoPoint } from "@inspect-ai/contracts";
+import type { AsyncStatus, GeoPoint, InspectionChecklist } from "@inspect-ai/contracts";
 
 export default function HomePage() {
   const router = useRouter();
-  const { address: draftAddress, agency: draftAgency, coordinates: draftCoordinates, askingRent: draftAskingRent, beginInspection, prepareManualMode, updateInspectionDraft } =
+  const {
+    address: draftAddress,
+    agency: draftAgency,
+    coordinates: draftCoordinates,
+    inspectionChecklist: draftInspectionChecklist,
+    askingRent: draftAskingRent,
+    beginInspection,
+    prepareManualMode,
+    updateInspectionDraft,
+  } =
     useSessionStore();
   const { resetForNewInspection } = useHazardStore();
 
   const [address, setAddress] = useState(draftAddress);
   const [agency, setAgency] = useState(draftAgency);
   const [coordinates, setCoordinates] = useState<GeoPoint | null>(draftCoordinates);
+  const [inspectionChecklist, setInspectionChecklist] = useState<InspectionChecklist | null>(draftInspectionChecklist);
   const [askingRent, setAskingRent] = useState(typeof draftAskingRent === "number" ? String(draftAskingRent) : "");
   const [locationStatus, setLocationStatus] = useState<AsyncStatus>("idle");
   const [isManualAddressOpen, setIsManualAddressOpen] = useState(false);
@@ -52,6 +63,7 @@ export default function HomePage() {
       address: address.trim(),
       agency: agency.trim(),
       coordinates,
+      inspectionChecklist,
       askingRent: askingRent ? Number(askingRent) : null,
     });
     resetForNewInspection();
@@ -64,6 +76,7 @@ export default function HomePage() {
         address: address.trim(),
         agency: agency.trim(),
         coordinates: coordinates || undefined,
+        inspectionChecklist: inspectionChecklist || undefined,
       },
     });
     router.push("/radar");
@@ -76,6 +89,7 @@ export default function HomePage() {
       address: address.trim(),
       agency: agency.trim(),
       coordinates,
+      inspectionChecklist,
       askingRent: askingRent ? Number(askingRent) : null,
     });
     router.push("/manual");
@@ -215,6 +229,20 @@ export default function HomePage() {
                 value={askingRent}
                 onChange={(e) => setAskingRent(e.target.value.replace(/[^\d]/g, ""))}
                 className="bg-muted/50 focus-visible:ring-accent"
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-foreground/90">Inspection Notes & Entry Condition (Optional)</div>
+              <p className="text-xs text-muted-foreground">
+                Capture the practical items that affect move-in risk, lease clarity, utilities, and daily livability.
+              </p>
+              <InspectionChecklistEditor
+                value={inspectionChecklist}
+                onChange={(nextChecklist) => {
+                  setInspectionChecklist(nextChecklist);
+                  updateInspectionDraft({ inspectionChecklist: nextChecklist });
+                }}
+                compact
               />
             </div>
           </CardContent>

@@ -1,4 +1,4 @@
-import { negotiateRequestSchema, negotiateResponseSchema } from "@inspect-ai/contracts";
+import { negotiateRequestSchema, negotiateResponseSchema, sanitizeNegotiateResponse } from "@inspect-ai/contracts";
 import { callGeminiJson } from "@/lib/ai";
 import { appEnv } from "@/lib/env";
 import { buildNegotiationFallback } from "@/lib/fallbacks";
@@ -38,12 +38,14 @@ export async function POST(request: Request) {
   const parsed = negotiateRequestSchema.safeParse(body);
   if (!parsed.success) {
     return createJsonResponse(
-      negotiateResponseSchema.parse(
-        buildNegotiationFallback({
-          hazards: [],
-          intelligence: undefined,
-          inspectionMode: "live",
-        })
+      sanitizeNegotiateResponse(
+        negotiateResponseSchema.parse(
+          buildNegotiationFallback({
+            hazards: [],
+            intelligence: undefined,
+            inspectionMode: "live",
+          })
+        )
       ),
       {
         origin: cors.origin,
@@ -62,12 +64,14 @@ export async function POST(request: Request) {
 
   if (!rateLimit.allowed) {
     return createJsonResponse(
-      negotiateResponseSchema.parse(
-        buildNegotiationFallback({
-          hazards: parsed.data.hazards,
-          intelligence: parsed.data.intelligence,
-          inspectionMode: parsed.data.inspectionMode,
-        })
+      sanitizeNegotiateResponse(
+        negotiateResponseSchema.parse(
+          buildNegotiationFallback({
+            hazards: parsed.data.hazards,
+            intelligence: parsed.data.intelligence,
+            inspectionMode: parsed.data.inspectionMode,
+          })
+        )
       ),
       {
         origin: cors.origin,
@@ -81,11 +85,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const fallback = buildNegotiationFallback({
-    hazards: parsed.data.hazards,
-    intelligence: parsed.data.intelligence,
-    inspectionMode: parsed.data.inspectionMode,
-  });
+  const fallback = sanitizeNegotiateResponse(
+    buildNegotiationFallback({
+      hazards: parsed.data.hazards,
+      intelligence: parsed.data.intelligence,
+      inspectionMode: parsed.data.inspectionMode,
+    })
+  );
   const knowledgeMatches = queryKnowledge({
     query: [
       parsed.data.hazards.map((hazard) => `${hazard.category} ${hazard.description}`).join(" "),
@@ -108,6 +114,8 @@ export async function POST(request: Request) {
         "You are a rental negotiation and pre-lease risk assistant.",
         "Return only JSON.",
         "This is not legal advice. Focus on practical renter guidance.",
+        "The property intelligence payload has already been condensed by Gemini 2.5 grounded summaries. Synthesize it into a final renter recommendation.",
+        "If an inspectionChecklist is provided, treat it as first-hand renter observations and prioritize it over generic assumptions.",
         "Use the provided hazards and property intelligence to produce:",
         "- an email template",
         "- key negotiation points",
@@ -116,16 +124,29 @@ export async function POST(request: Request) {
         "- evidence summary",
         "- inspection coverage",
         "- a pre-lease action guide",
+        "Write for renters, not for engineers.",
+        "decisionRecommendation.summary must be one sentence under 140 characters.",
+        "decisionRecommendation.reasons must be 2-4 short lines under 120 characters each.",
+        "fitScore.summary must be one sentence under 140 characters.",
+        "fitScore.drivers must be short labels under 70 characters each.",
+        "evidenceSummary entries must be concise and free of scraped webpage fragments.",
+        "inspectionCoverage.summary must be one short sentence under 140 characters.",
+        "inspectionCoverage.warning must be under 140 characters.",
+        "preLeaseActionGuide.summary must be one short sentence under 140 characters.",
+        "preLeaseActionGuide items must be short action lines under 100 characters.",
+        "Do not include business directory fragments, review widgets, opening hours, or raw copied snippets.",
         "Use the knowledge snippets when they are relevant, but do not quote them verbatim.",
         JSON.stringify({ knowledgeMatches }, null, 2),
         JSON.stringify(parsed.data, null, 2),
       ].join("\n"),
     });
 
-    const responsePayload = negotiateResponseSchema.parse({
-      ...fallback,
-      ...structured,
-    });
+    const responsePayload = sanitizeNegotiateResponse(
+      negotiateResponseSchema.parse({
+        ...fallback,
+        ...structured,
+      })
+    );
 
     if (knowledgeMatches.length > 0) {
       const knowledgePoints = knowledgeMatches.map((match) => `${match.title}: ${match.snippet}`);
@@ -139,6 +160,8 @@ export async function POST(request: Request) {
       };
     }
 
+    const sanitizedResponse = sanitizeNegotiateResponse(responsePayload);
+
     logInfo({
       message: "Negotiate route completed",
       route: "/api/negotiate",
@@ -148,7 +171,7 @@ export async function POST(request: Request) {
       durationMs: Date.now() - startedAt,
     });
 
-    return createJsonResponse(responsePayload, {
+    return createJsonResponse(sanitizedResponse, {
       origin: cors.origin,
       requestId,
       headers: createRateLimitHeaders(rateLimit),

@@ -1,4 +1,4 @@
-import type { Hazard, SeverityLevel } from "@inspect-ai/contracts";
+import { formatRoomTypeLabel, type Hazard, type SeverityLevel } from "@inspect-ai/contracts";
 
 const penaltyBySeverity: Record<SeverityLevel, number> = {
   Critical: 25,
@@ -37,7 +37,7 @@ export function getRiskDrivers(hazards: Hazard[]) {
   const drivers = [
     breakdown.Critical > 0 ? `${breakdown.Critical} critical issue${breakdown.Critical > 1 ? "s" : ""}` : null,
     breakdown.High > 0 ? `${breakdown.High} high severity issue${breakdown.High > 1 ? "s" : ""}` : null,
-    highestWeightIssue ? `Top concern: ${highestWeightIssue.category} in ${highestWeightIssue.roomType ?? "unknown area"}` : null,
+    highestWeightIssue ? `Top concern: ${highestWeightIssue.category} in ${formatRoomTypeLabel(highestWeightIssue.roomType)}` : null,
   ].filter(Boolean);
 
   return {

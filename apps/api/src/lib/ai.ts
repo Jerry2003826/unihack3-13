@@ -1,8 +1,9 @@
 import type { ZodTypeAny } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { toGeminiResponseSchema } from "@inspect-ai/contracts";
-import { extractJsonText, withTimeout } from "@/lib/http";
-import { getGeminiClient } from "@/lib/providers/gemini";
+import { extractJsonText, withTimeout } from "./http";
+import { buildCitationsFromGroundedCatalog, extractGroundedCatalog } from "./grounding";
+import { getGeminiClient } from "./providers/gemini";
 
 export interface SourceCatalogItem {
   sourceId: string;
@@ -55,6 +56,71 @@ export async function callGeminiJson<TSchema extends ZodTypeAny>(args: {
   }
 
   return args.schema.parse(JSON.parse(extractJsonText(rawText)));
+}
+
+export async function callGeminiGroundedJson<TSchema extends ZodTypeAny>(args: {
+  model: string;
+  prompt: string;
+  schema: TSchema;
+  coordinates?: { lat: number; lng: number };
+  languageCode?: string;
+  timeoutMs?: number;
+}) {
+  const client = getGeminiClient();
+  if (!client) {
+    throw new Error("Gemini is not configured.");
+  }
+
+  const response = await withTimeout(
+    () =>
+      client.models.generateContent({
+        model: args.model,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: [
+                  args.prompt,
+                  "Return only a JSON object that matches this schema.",
+                  JSON.stringify(createGeminiSchema(args.schema), null, 2),
+                ].join("\n"),
+              },
+            ],
+          },
+        ],
+        config: {
+          tools: [{ googleMaps: {} }],
+          toolConfig: {
+            retrievalConfig: {
+              languageCode: args.languageCode ?? "en-AU",
+              latLng: args.coordinates
+                ? {
+                    latitude: args.coordinates.lat,
+                    longitude: args.coordinates.lng,
+                  }
+                : undefined,
+            },
+          },
+        },
+      }),
+    args.timeoutMs ?? 20_000
+  );
+
+  const rawText = response.text;
+  if (!rawText) {
+    throw new Error("Gemini returned an empty grounded response.");
+  }
+
+  const groundingMetadata = response.candidates?.[0]?.groundingMetadata;
+  const catalog = extractGroundedCatalog(groundingMetadata);
+
+  return {
+    data: args.schema.parse(JSON.parse(extractJsonText(rawText))),
+    groundingMetadata,
+    catalog,
+    citations: buildCitationsFromGroundedCatalog(catalog),
+  };
 }
 
 export function sanitizeCitations(

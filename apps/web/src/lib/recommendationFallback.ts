@@ -31,6 +31,12 @@ function buildInspectionCoverage(mode: InspectionMode, hazards: Hazard[]): Inspe
   const confidence = hazards.length >= 4 ? "high" : hazards.length >= 2 ? "medium" : "low";
 
   return {
+    summary:
+      hazards.length === 0
+        ? "Coverage is limited because no hazards were confirmed in this pass."
+        : roomsSeen.length >= 3
+          ? "Coverage is moderate, but some hidden-risk areas still need a manual check."
+          : "Coverage is partial and should be expanded before lease signing.",
     roomsSeen,
     missingAreas:
       roomsSeen.length >= 4
@@ -188,6 +194,10 @@ function buildActionGuide(args: {
   }
 
   return {
+    summary:
+      args.recommendation.outcome === "Apply"
+        ? "Proceed only after the owner confirms the current condition and lease details in writing."
+        : "Use the items below as the minimum checklist before you commit to this property.",
     negotiatePoints: negotiatePoints.slice(0, 5),
     furtherInspectionItems,
   };

@@ -55,7 +55,7 @@ export default function RadarPage() {
       // Real Mode
       setStatusText("Gathering property intelligence...");
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
 
       try {
         const baseUrl = publicAppConfig.apiBaseUrl;
@@ -86,7 +86,7 @@ export default function RadarPage() {
         clearTimeout(timeoutId);
         console.warn("Intelligence fetch failed or timed out:", getErrorMessage(err));
         // Fallback
-        toast.warning("Background check timed out. Using fallback data.");
+        toast.info("Quick local summary loaded. Deeper checks will continue in the report.");
         setIntelligence(getRadarTimeoutFallback(address, agency));
       }
 

@@ -19,6 +19,8 @@ function buildPrompt(request: AnalyzeRequest) {
     "Allowed categories: Mould, Structural, Plumbing, Pest, Electrical, Safety, Other.",
     "Allowed severities: Critical, High, Medium, Low.",
     "Each hazard must contain category, severity, and a short tenant-friendly description.",
+    "Descriptions must be plain English, one sentence, under 90 characters, and suitable for a renter-facing report.",
+    "Do not mention image quality, model uncertainty, coordinates, or technical scanning terms.",
     "Include estimatedCost only when there is a strong visual basis.",
     request.source === "manual"
       ? "You may receive multiple photos of the same property. Merge duplicate findings across images."

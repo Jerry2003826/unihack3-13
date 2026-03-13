@@ -42,6 +42,7 @@ export const appEnv = {
   corsAllowedOrigins: parseAllowedOrigins(),
   geminiApiKey: readEnv("GEMINI_API_KEY"),
   geminiVisionModel: readEnv("GEMINI_VISION_MODEL") ?? "gemini-2.5-flash",
+  geminiGroundedModel: readEnv("GEMINI_GROUNDED_MODEL") ?? "gemini-2.5-flash",
   geminiIntelligenceModel: readEnv("GEMINI_INTELLIGENCE_MODEL") ?? "gemini-2.5-flash-lite",
   geminiReasoningModel: readEnv("GEMINI_REASONING_MODEL") ?? "gemini-2.5-pro",
   tavilyApiKey: readEnv("TAVILY_API_KEY"),

@@ -1,14 +1,15 @@
 import type { ReportSnapshot } from "@inspect-ai/contracts";
-import { buildPeoplePaperworkChecks, ensureLightingSnapshot } from "@inspect-ai/contracts";
+import { buildPeoplePaperworkChecks, ensureLightingSnapshot, sanitizeReportSnapshot } from "@inspect-ai/contracts";
 import { calculatePropertyRiskScore } from "@/lib/scoring";
 
 export function normalizeReportSnapshot(snapshot: ReportSnapshot): ReportSnapshot {
   const withLighting = ensureLightingSnapshot(snapshot);
+  const sanitized = sanitizeReportSnapshot(withLighting);
 
   return {
-    ...withLighting,
-    propertyRiskScore: calculatePropertyRiskScore(withLighting.hazards),
-    comparisonEligible: withLighting.comparisonEligible ?? true,
-    paperworkChecks: withLighting.paperworkChecks ?? buildPeoplePaperworkChecks(withLighting),
+    ...sanitized,
+    propertyRiskScore: calculatePropertyRiskScore(sanitized.hazards),
+    comparisonEligible: sanitized.comparisonEligible ?? true,
+    paperworkChecks: sanitized.paperworkChecks ?? buildPeoplePaperworkChecks(sanitized),
   };
 }

@@ -56,6 +56,7 @@ export function buildGeoFallback(args: {
       (args.address
         ? `Limited geo signals for ${args.address}. Verify transit access and local noise in person.`
         : "Limited geo signals available. Verify transit access and local noise in person."),
+    keySignals: ["Transit detail is limited", "Noise should be checked in person"],
     nearbyTransit: [],
     destinationConvenience: args.destinationConvenience ?? [],
   };
@@ -69,6 +70,7 @@ export function buildCommunityFallback(args: {
     summary: args.address
       ? `Community research for ${args.address} is incomplete${args.reason ? `: ${args.reason}` : ""}. Review local forums and nearby street conditions manually.`
       : `Community research is incomplete${args.reason ? `: ${args.reason}` : ""}. Review local forums manually before signing.`,
+    highlights: ["Local discussion remains limited", "Verify street conditions in person"],
     sentiment: "unknown",
     citations: [],
   };
@@ -80,6 +82,8 @@ export function buildAgencyFallback(args: {
 }): AgencyBackground {
   return {
     agencyName: args.agency?.trim() || "Unknown agency",
+    summary: "Public agency research is limited, so written commitments matter more than verbal assurances.",
+    highlights: ["Request written repair commitments", "Confirm lease terms in writing"],
     sentimentScore: 3,
     commonComplaints: [],
     negotiationLeverage: args.reason
@@ -121,6 +125,12 @@ export function buildInspectionCoverage(mode: InspectionMode, hazards: Hazard[])
   const confidence = hazards.length >= 4 ? "high" : hazards.length >= 2 ? "medium" : "low";
 
   return {
+    summary:
+      hazards.length === 0
+        ? "Coverage is limited because no hazards were confirmed in this pass."
+        : roomsSeen.length >= 3
+          ? "Coverage is moderate, but some hidden-risk areas still need a manual check."
+          : "Coverage is partial and should be expanded before lease signing.",
     roomsSeen,
     missingAreas:
       roomsSeen.length >= 4
@@ -284,6 +294,10 @@ export function buildActionGuide(args: {
   }
 
   return {
+    summary:
+      args.recommendation.outcome === "Apply"
+        ? "Proceed only after the owner confirms the current condition and lease details in writing."
+        : "Use the items below as the minimum checklist before you commit to this property.",
     negotiatePoints: negotiatePoints.slice(0, 5),
     furtherInspectionItems,
   };

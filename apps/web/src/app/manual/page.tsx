@@ -4,7 +4,7 @@ import Image from "next/image";
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { GeoPoint, Hazard, PropertyIntelligence, ReportSnapshot } from "@inspect-ai/contracts";
+import type { GeoPoint, Hazard, InspectionChecklist, PropertyIntelligence, ReportSnapshot } from "@inspect-ai/contracts";
 import {
   analyzeResponseSchema,
   intelligenceResponseSchema,
@@ -19,6 +19,7 @@ import { saveReportSnapshot } from "@/lib/report-snapshot/reportSnapshotStore";
 import { calculatePropertyRiskScore } from "@/lib/scoring";
 import { useHazardStore } from "@/store/useHazardStore";
 import { useSessionStore } from "@/store/useSessionStore";
+import { InspectionChecklistEditor } from "@/components/inspection/InspectionChecklistEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -94,6 +95,7 @@ export default function ManualPage() {
     agency: draftAgency,
     coordinates: draftCoordinates,
     propertyNotes: draftPropertyNotes,
+    inspectionChecklist: draftInspectionChecklist,
     askingRent: draftAskingRent,
     beginInspection,
     updateInspectionDraft,
@@ -110,6 +112,7 @@ export default function ManualPage() {
   const [agency, setAgency] = useState(draftAgency);
   const [coordinates, setCoordinates] = useState<GeoPoint | null>(draftCoordinates);
   const [propertyNotes, setPropertyNotes] = useState(draftPropertyNotes);
+  const [inspectionChecklist, setInspectionChecklist] = useState<InspectionChecklist | null>(draftInspectionChecklist);
   const [askingRent, setAskingRent] = useState(typeof draftAskingRent === "number" ? String(draftAskingRent) : "");
   const [locationStatus, setLocationStatus] = useState<"idle" | "loading" | "success" | "fallback" | "error">("idle");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -225,6 +228,7 @@ export default function ManualPage() {
           agency: agency.trim(),
           coordinates,
           propertyNotes: propertyNotes.trim(),
+          inspectionChecklist,
           askingRent: parsedAskingRent,
         });
 
@@ -236,6 +240,7 @@ export default function ManualPage() {
           agency: agency.trim(),
           coordinates,
           propertyNotes: propertyNotes.trim(),
+          inspectionChecklist,
           askingRent: parsedAskingRent,
         });
       }
@@ -379,6 +384,7 @@ export default function ManualPage() {
           agency: agency.trim() || undefined,
           coordinates: effectiveCoordinates || undefined,
           propertyNotes: propertyNotes.trim() || undefined,
+          inspectionChecklist: inspectionChecklist || undefined,
         },
         hazards,
         intelligence,
@@ -402,6 +408,7 @@ export default function ManualPage() {
           agency: normalizedSnapshot.inputs.agency,
           coordinates: normalizedSnapshot.inputs.coordinates,
           propertyNotes: normalizedSnapshot.inputs.propertyNotes,
+          inspectionChecklist: normalizedSnapshot.inputs.inspectionChecklist,
         },
       });
       setReportId(reportId);
@@ -525,6 +532,20 @@ export default function ManualPage() {
                 className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 value={propertyNotes}
                 onChange={(event) => setPropertyNotes(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Inspection Checklist & Entry Notes</label>
+              <p className="text-xs text-muted-foreground">
+                Record utilities, locks, noise, kitchen and bathroom tests, lease terms, building management, pests,
+                and entry-condition evidence.
+              </p>
+              <InspectionChecklistEditor
+                value={inspectionChecklist}
+                onChange={(nextChecklist) => {
+                  setInspectionChecklist(nextChecklist);
+                  updateInspectionDraft({ inspectionChecklist: nextChecklist });
+                }}
               />
             </div>
           </CardContent>
