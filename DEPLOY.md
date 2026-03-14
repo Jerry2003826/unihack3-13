@@ -93,6 +93,12 @@ Set these for real production behavior:
 
 ```bash
 GEMINI_API_KEY=
+COHERE_API_KEY=
+COHERE_EMBED_MODEL=embed-v4.0
+COHERE_RERANK_MODEL=rerank-v4.0-pro
+QDRANT_URL=http://127.0.0.1:6333
+QDRANT_COLLECTION=rental_kb_v1
+QDRANT_API_KEY=
 GOOGLE_MAPS_API_KEY=
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=
 NEXT_PUBLIC_API_BASE_URL=https://api.yourdomain.com
@@ -248,10 +254,12 @@ This repository now includes:
 
 The script will:
 
-- install Node.js, Nginx, PM2, and required system packages
+- install Node.js, Nginx, Docker, PM2, and required system packages
 - clone or update the repo
 - write the runtime env file to repo root `.env.local`
+- start local Qdrant (`qdrant/qdrant`) with persistent storage
 - build both Next.js apps
+- run `knowledge:index` to seed the RAG corpus into Qdrant
 - start both services with PM2
 - write the Nginx reverse proxy config
 - optionally request Let's Encrypt certificates

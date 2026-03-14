@@ -566,8 +566,42 @@ export const knowledgeMatchSchema = z.object({
   title: z.string(),
   snippet: z.string(),
   tags: z.array(z.string()),
+  documentId: z.string().optional(),
+  chunkId: z.string().optional(),
+  retrievalScore: z.number().optional(),
+  rerankScore: z.number().optional(),
 });
 export type KnowledgeMatch = z.infer<typeof knowledgeMatchSchema>;
+
+export const knowledgeCitationSchema = z.object({
+  sourceId: z.string(),
+  title: z.string(),
+  url: z.string(),
+  documentId: z.string().optional(),
+  chunkId: z.string().optional(),
+});
+export type KnowledgeCitation = z.infer<typeof knowledgeCitationSchema>;
+
+export const knowledgeAnswerSchema = z.object({
+  summary: z.string(),
+  keyPoints: z.array(z.string()),
+  confidence: z.enum(["low", "medium", "high"]).optional(),
+});
+export type KnowledgeAnswer = z.infer<typeof knowledgeAnswerSchema>;
+
+export const knowledgeQueryTraceSchema = z.object({
+  mode: z.enum(["rag", "fallback"]),
+  collection: z.string().optional(),
+  embedModel: z.string().optional(),
+  rerankModel: z.string().optional(),
+  answerModel: z.string().optional(),
+  retrievedCount: z.number().int().nonnegative(),
+  rerankedCount: z.number().int().nonnegative(),
+  rerankUsed: z.boolean(),
+  generationUsed: z.boolean(),
+  failures: z.array(z.string()).optional(),
+});
+export type KnowledgeQueryTrace = z.infer<typeof knowledgeQueryTraceSchema>;
 
 export const roomSceneSurfaceIdSchema = z.enum([
   "back-wall",
@@ -676,6 +710,9 @@ export const reportSnapshotSchema = z.object({
   evidenceSummary: z.array(evidenceItemSchema).optional(),
   preLeaseActionGuide: preLeaseActionGuideSchema.optional(),
   knowledgeMatches: z.array(knowledgeMatchSchema).optional(),
+  knowledgeCitations: z.array(knowledgeCitationSchema).optional(),
+  knowledgeAnswer: knowledgeAnswerSchema.optional(),
+  knowledgeTrace: knowledgeQueryTraceSchema.optional(),
   paperworkChecks: peoplePaperworkChecksSchema.optional(),
   guidanceCaptures: z.array(liveGuidanceCaptureSchema).optional(),
   roomScanStates: z.array(liveRoomScanStateSchema).optional(),
@@ -963,7 +1000,10 @@ export const knowledgeQueryRequestSchema = z.object({
 export type KnowledgeQueryRequest = z.infer<typeof knowledgeQueryRequestSchema>;
 
 export const knowledgeQueryResponseSchema = z.object({
+  answer: knowledgeAnswerSchema,
+  citations: z.array(knowledgeCitationSchema),
   matches: z.array(knowledgeMatchSchema),
+  trace: knowledgeQueryTraceSchema,
 });
 export type KnowledgeQueryResponse = z.infer<typeof knowledgeQueryResponseSchema>;
 

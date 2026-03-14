@@ -197,6 +197,8 @@ export default function ScanPage() {
   };
 
   const currentRoomScene = roomScenes3d.find((scene) => scene.roomType === roomType) ?? null;
+  const showManualAssist = Boolean(activeIssueObservation || guidanceTarget);
+  const showBanner = Boolean(banner.text && (!showManualAssist || banner.tone === "success"));
 
   return (
     <div className="relative w-full h-[100dvh] bg-black overflow-hidden flex flex-col">
@@ -218,134 +220,137 @@ export default function ScanPage() {
 
       <BoundingBoxOverlay guidanceTarget={guidanceTarget} />
 
-      {banner.text ? (
-        <div className="absolute inset-x-3 top-20 z-40 rounded-2xl border border-border/70 bg-card/92 px-4 py-3 text-sm text-foreground shadow-2xl backdrop-blur sm:inset-x-4 sm:top-24">
-          <div className="flex items-center gap-2">
-            <span
-              className={`size-2 rounded-full ${
-                banner.tone === "success" ? "bg-emerald-400" : "bg-cyan-400"
-              }`}
-            />
-            <span className="font-medium">
-              {banner.tone === "success" ? "Confirmed" : "AI guidance"}
-            </span>
-          </div>
-          <p className="mt-2 text-muted-foreground">{banner.text}</p>
-        </div>
-      ) : null}
-
-      {activeIssueObservation || guidanceTarget ? (
-        <div className="absolute inset-x-3 top-[9.25rem] z-40 rounded-2xl border border-border/70 bg-card/92 p-3 text-sm text-foreground shadow-2xl backdrop-blur sm:inset-x-4 sm:top-[10.5rem]">
-          <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            Manual Assist
-          </div>
-          {activeIssueObservation ? (
-            <>
-              <p className="mt-2 text-sm text-foreground">
-                AI flagged <span className="font-semibold">{activeIssueObservation.category}</span>. You can override it.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={dismissCurrentIssue}>
-                  Not an issue
-                </Button>
-                <Button size="sm" onClick={recordCurrentIssueNow}>
-                  Add to report now
-                </Button>
-              </div>
-            </>
-          ) : guidanceTarget ? (
-            <>
-              <p className="mt-2 text-sm text-foreground">
-                Reviewing <span className="font-semibold">{guidanceTarget.label}</span>. You can advance manually.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Button size="sm" onClick={markCurrentGuidanceChecked}>
-                  Mark checked
-                </Button>
-                <Button size="sm" variant="outline" onClick={skipCurrentGuidance}>
-                  Skip
-                </Button>
-              </div>
-            </>
-          ) : null}
-        </div>
-      ) : null}
-
-      {cameraError ? (
-        <div className="absolute inset-x-3 top-20 z-40 rounded-2xl border border-border/70 bg-card/95 p-4 text-sm text-foreground shadow-2xl backdrop-blur sm:inset-x-4 sm:top-24">
-          <div className="font-medium">Camera access was denied.</div>
-          <p className="mt-2 text-muted-foreground">
-            {cameraError}
-          </p>
-          <div className="mt-4 flex gap-3">
-            <Button variant="outline" onClick={handleRetryCamera}>
-              Retry
-            </Button>
-            <Button onClick={handleEnableDemoMode}>
-              Enable Demo Mode
-            </Button>
-          </div>
-        </div>
-      ) : null}
-
-      {/* Top Header: Room Selection */}
-      <div className="absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-black/80 to-transparent p-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4">
-        <select 
-          className="w-full bg-background/50 backdrop-blur-md text-foreground border border-border/50 rounded-md px-3 py-2 text-sm focus:ring-accent"
-          value={roomType}
-          onChange={(e) => setRoomType(e.target.value as RoomType)}
-        >
-          {ROOM_OPTIONS.map((rt) => (
-            <option key={rt} value={rt}>{rt.toUpperCase().replace("-", " ")}</option>
-          ))}
-        </select>
-        
-        <div className="flex items-center justify-between mt-3 text-xs text-white/80 font-medium">
-          <div className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full ${isAnalyzing ? "bg-accent animate-pulse" : "bg-muted-foreground"}`} />
-            {cameraError ? "Camera blocked" : isAnalyzing ? "AI Analyzing..." : isDemoMode ? "Demo ready" : "Ready"}
-          </div>
-          <div>Hazards: {hazards.length}</div>
-        </div>
-
-        <div className="mt-3 rounded-2xl border border-white/15 bg-black/35 p-3 text-xs text-white/85 backdrop-blur">
-          <div className="flex items-center justify-between gap-3">
-            <div className="font-medium">
-              {currentRoomState.status === "forced-incomplete"
-                ? "Room force-ended"
-                : currentRoomState.endAllowed
-                  ? "Room ready to end"
-                  : "Room coverage in progress"}
-            </div>
-            <div>
-              {inspectionCoverage.coverageStatus === "complete"
-                ? "Coverage complete"
-                : inspectionCoverage.coverageStatus === "mixed"
-                  ? "Coverage mixed"
-                  : "Coverage still missing"}
-            </div>
-          </div>
-          <div className="mt-2 text-white/70">
-            Required views captured: {currentRoomState.completedTargets.length}/
-            {currentRoomState.requiredTargets.length + currentRoomState.escalationTargets.length}
-          </div>
-          {currentRoomState.currentTargetId ? (
-            <div className="mt-2 text-white/70">
-              Current target: {guidanceTarget?.label ?? currentRoomState.currentTargetId}
-            </div>
-          ) : null}
-          {currentRoomState.endBlockedReasons.length > 0 ? (
-            <div className="mt-2 space-y-1 text-white/65">
-              <div className="font-medium text-white/75">Still missing</div>
-              {currentRoomState.endBlockedReasons.slice(0, 3).map((reason) => (
-                <div key={reason}>{reason}</div>
+      <div className="absolute inset-x-0 top-0 z-40 bg-gradient-to-b from-black/85 via-black/45 to-transparent p-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4">
+        <div className="mx-auto flex max-h-[52vh] flex-col gap-3 overflow-y-auto pr-1">
+          <div className="rounded-2xl border border-white/10 bg-black/30 p-3 backdrop-blur-md">
+            <select 
+              className="w-full bg-background/50 backdrop-blur-md text-foreground border border-border/50 rounded-md px-3 py-2 text-sm focus:ring-accent"
+              value={roomType}
+              onChange={(e) => setRoomType(e.target.value as RoomType)}
+            >
+              {ROOM_OPTIONS.map((rt) => (
+                <option key={rt} value={rt}>{rt.toUpperCase().replace("-", " ")}</option>
               ))}
+            </select>
+            
+            <div className="mt-3 flex items-center justify-between text-xs text-white/80 font-medium">
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${isAnalyzing ? "bg-accent animate-pulse" : "bg-muted-foreground"}`} />
+                {cameraError ? "Camera blocked" : isAnalyzing ? "AI Analyzing..." : isDemoMode ? "Demo ready" : "Ready"}
+              </div>
+              <div>Hazards: {hazards.length}</div>
             </div>
-          ) : (
-            <div className="mt-2 text-emerald-300">
-              AI has enough evidence for this room. End the room or generate the report.
+          </div>
+
+          <div className="rounded-2xl border border-white/15 bg-black/35 p-3 text-xs text-white/85 backdrop-blur">
+            <div className="flex items-center justify-between gap-3">
+              <div className="font-medium">
+                {currentRoomState.status === "forced-incomplete"
+                  ? "Room force-ended"
+                  : currentRoomState.endAllowed
+                    ? "Room ready to end"
+                    : "Room coverage in progress"}
+              </div>
+              <div>
+                {inspectionCoverage.coverageStatus === "complete"
+                  ? "Coverage complete"
+                  : inspectionCoverage.coverageStatus === "mixed"
+                    ? "Coverage mixed"
+                    : "Coverage still missing"}
+              </div>
             </div>
-          )}
+            <div className="mt-2 text-white/70">
+              Required views captured: {currentRoomState.completedTargets.length}/
+              {currentRoomState.requiredTargets.length + currentRoomState.escalationTargets.length}
+            </div>
+            {currentRoomState.currentTargetId ? (
+              <div className="mt-2 text-white/70">
+                Current target: {guidanceTarget?.label ?? currentRoomState.currentTargetId}
+              </div>
+            ) : null}
+            {currentRoomState.endBlockedReasons.length > 0 ? (
+              <div className="mt-2 space-y-1 text-white/65">
+                <div className="font-medium text-white/75">Still missing</div>
+                {currentRoomState.endBlockedReasons.slice(0, 3).map((reason) => (
+                  <div key={reason}>{reason}</div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-2 text-emerald-300">
+                AI has enough evidence for this room. End the room or generate the report.
+              </div>
+            )}
+          </div>
+
+          {showBanner ? (
+            <div className="rounded-2xl border border-border/70 bg-card/92 px-4 py-3 text-sm text-foreground shadow-2xl backdrop-blur">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`size-2 rounded-full ${
+                    banner.tone === "success" ? "bg-emerald-400" : "bg-cyan-400"
+                  }`}
+                />
+                <span className="font-medium">
+                  {banner.tone === "success" ? "Confirmed" : "AI guidance"}
+                </span>
+              </div>
+              <p className="mt-2 text-muted-foreground">{banner.text}</p>
+            </div>
+          ) : null}
+
+          {showManualAssist ? (
+            <div className="rounded-2xl border border-border/70 bg-card/92 p-3 text-sm text-foreground shadow-2xl backdrop-blur">
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                Manual Assist
+              </div>
+              {activeIssueObservation ? (
+                <>
+                  <p className="mt-2 text-sm text-foreground">
+                    AI flagged <span className="font-semibold">{activeIssueObservation.category}</span>. You can override it.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" onClick={dismissCurrentIssue}>
+                      Not an issue
+                    </Button>
+                    <Button size="sm" onClick={recordCurrentIssueNow}>
+                      Add to report now
+                    </Button>
+                  </div>
+                </>
+              ) : guidanceTarget ? (
+                <>
+                  <p className="mt-2 text-sm text-foreground">
+                    Reviewing <span className="font-semibold">{guidanceTarget.label}</span>. You can advance manually.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button size="sm" onClick={markCurrentGuidanceChecked}>
+                      Mark checked
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={skipCurrentGuidance}>
+                      Skip
+                    </Button>
+                  </div>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+
+          {cameraError ? (
+            <div className="rounded-2xl border border-border/70 bg-card/95 p-4 text-sm text-foreground shadow-2xl backdrop-blur">
+              <div className="font-medium">Camera access was denied.</div>
+              <p className="mt-2 text-muted-foreground">
+                {cameraError}
+              </p>
+              <div className="mt-4 flex gap-3">
+                <Button variant="outline" onClick={handleRetryCamera}>
+                  Retry
+                </Button>
+                <Button onClick={handleEnableDemoMode}>
+                  Enable Demo Mode
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
 

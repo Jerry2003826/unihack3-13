@@ -299,11 +299,19 @@ export default function ReportPage() {
 
       if (parsedStored?.success) {
         const normalized = normalizeReportSnapshot(parsedStored.data);
+        const hasKnowledgeContent =
+          Boolean(normalized.knowledgeAnswer) || Boolean(normalized.knowledgeMatches?.length);
         setSnapshot(normalized);
         setDeepStatus(hasRecommendationBundle(normalized) ? "success" : "idle");
         setRecommendationStatus(hasRecommendationBundle(normalized) ? "success" : "idle");
         setMapStatus(normalized.exportAssets?.staticMapImageBase64 ? "success" : "idle");
-        setKnowledgeStatus(normalized.knowledgeMatches?.length ? "success" : "idle");
+        setKnowledgeStatus(
+          hasKnowledgeContent
+            ? normalized.knowledgeTrace?.mode === "fallback"
+              ? "fallback"
+              : "success"
+            : "idle"
+        );
         setIsBooting(false);
 
         if (
@@ -606,7 +614,7 @@ export default function ReportPage() {
   }, [snapshot]);
 
   useEffect(() => {
-    if (!snapshot || snapshot.knowledgeMatches?.length || knowledgeStartedRef.current === snapshot.reportId) {
+    if (!snapshot || snapshot.knowledgeAnswer || snapshot.knowledgeTrace || knowledgeStartedRef.current === snapshot.reportId) {
       return;
     }
 
@@ -639,12 +647,20 @@ export default function ReportPage() {
       }
 
       const payload: KnowledgeQueryResponse = knowledgeQueryResponseSchema.parse(await response.json());
-      const nextStatus: AsyncStatus = payload.matches.length > 0 ? "success" : "fallback";
+      const nextStatus: AsyncStatus =
+        payload.trace.mode === "rag"
+          ? payload.matches.length > 0
+            ? "success"
+            : "fallback"
+          : "fallback";
       setKnowledgeStatus(nextStatus);
       const nextSnapshot = normalizeReportSnapshot(
         reportSnapshotSchema.parse({
           ...currentSnapshot,
           knowledgeMatches: payload.matches,
+          knowledgeCitations: payload.citations,
+          knowledgeAnswer: payload.answer,
+          knowledgeTrace: payload.trace,
         })
       );
       setSnapshot(nextSnapshot);
@@ -1633,25 +1649,85 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85 xl:col-span-2">
             <CardHeader>
-              <CardDescription>13. Knowledge Base Guidance</CardDescription>
-              <CardTitle>Extra renter guidance from the external knowledge base</CardTitle>
+              <CardDescription>13. RAG Knowledge Base Guidance</CardDescription>
+              <CardTitle>Private renter corpus guidance with retrieval workflow trace</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-3">
-              {snapshot.knowledgeMatches?.length ? (
-                snapshot.knowledgeMatches.map((match) => (
-                  <div key={match.sourceId} className="rounded-xl border border-border/70 bg-muted/20 p-4">
-                    <div className="text-sm font-medium text-foreground">{match.title}</div>
-                    <div className="mt-2 text-sm text-muted-foreground">{match.snippet}</div>
-                    <div className="mt-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                      {match.tags.join(" · ")}
-                    </div>
+              {snapshot.knowledgeAnswer ? (
+                <>
+                  <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                    <div className="text-sm font-medium text-foreground">{snapshot.knowledgeAnswer.summary}</div>
+                    <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-muted-foreground">
+                      {snapshot.knowledgeAnswer.keyPoints.map((point) => (
+                        <li key={point}>{point}</li>
+                      ))}
+                    </ul>
                   </div>
-                ))
+                  {snapshot.knowledgeTrace ? (
+                    <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                      <div className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                        Workflow Trace
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="secondary">mode: {snapshot.knowledgeTrace.mode}</Badge>
+                        <Badge variant="secondary">collection: {snapshot.knowledgeTrace.collection ?? "n/a"}</Badge>
+                        <Badge variant="secondary">retrieved: {snapshot.knowledgeTrace.retrievedCount}</Badge>
+                        <Badge variant="secondary">reranked: {snapshot.knowledgeTrace.rerankedCount}</Badge>
+                        <Badge variant="secondary">
+                          rerank: {snapshot.knowledgeTrace.rerankUsed ? snapshot.knowledgeTrace.rerankModel ?? "on" : "off"}
+                        </Badge>
+                        <Badge variant="secondary">
+                          answer: {snapshot.knowledgeTrace.generationUsed ? snapshot.knowledgeTrace.answerModel ?? "on" : "fallback"}
+                        </Badge>
+                      </div>
+                      {snapshot.knowledgeTrace.failures?.length ? (
+                        <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+                          {snapshot.knowledgeTrace.failures.map((failure) => (
+                            <li key={failure}>{failure}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {snapshot.knowledgeCitations?.length ? (
+                    <div className="grid gap-3">
+                      {snapshot.knowledgeCitations.map((citation) => (
+                        <div
+                          key={`${citation.sourceId}-${citation.chunkId ?? "doc"}`}
+                          className="rounded-xl border border-border/70 bg-muted/20 p-4"
+                        >
+                          <div className="text-sm font-medium text-foreground">{citation.title}</div>
+                          <div className="mt-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                            {citation.sourceId}
+                            {citation.chunkId ? ` · ${citation.chunkId}` : ""}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="grid gap-3">
+                    {snapshot.knowledgeMatches?.map((match) => (
+                      <div key={`${match.sourceId}-${match.chunkId ?? match.title}`} className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                        <div className="text-sm font-medium text-foreground">{match.title}</div>
+                        <div className="mt-2 text-sm text-muted-foreground">{match.snippet}</div>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                          <span>{match.tags.join(" · ")}</span>
+                          {typeof match.retrievalScore === "number" ? (
+                            <span>retrieval {match.retrievalScore.toFixed(3)}</span>
+                          ) : null}
+                          {typeof match.rerankScore === "number" ? (
+                            <span>rerank {match.rerankScore.toFixed(3)}</span>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
               ) : knowledgeStatus === "loading" ? (
-                <ReportSectionSkeleton copy="Querying renter knowledge base..." className="lg:col-span-2" />
+                <ReportSectionSkeleton copy="Running RAG retrieval, rerank, and answer synthesis..." className="lg:col-span-2" />
               ) : (
                 <div className="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
-                  Knowledge guidance is limited for this report. Use the action guide and paperwork checks as the minimum next steps.
+                  Knowledge guidance is currently running in fallback mode. Use the action guide and paperwork checks as the minimum next steps.
                 </div>
               )}
             </CardContent>

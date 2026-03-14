@@ -14,6 +14,8 @@ API_PORT="3001"
 NODE_MAJOR="22"
 ENABLE_SSL="0"
 SKIP_SYSTEM_PACKAGES="0"
+QDRANT_CONTAINER_NAME="inspect-qdrant"
+QDRANT_STORAGE_DIR="/opt/${APP_NAME}/qdrant_storage"
 
 RUN_USER="${SUDO_USER:-${USER}}"
 RUN_HOME="$(getent passwd "${RUN_USER}" | cut -d: -f6 2>/dev/null || true)"
@@ -235,7 +237,7 @@ install_system_packages() {
 
   log "Installing system packages"
   as_root "apt-get update"
-  as_root "DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg git nginx build-essential"
+  as_root "DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg git nginx build-essential docker.io"
 
   if [[ "${ENABLE_SSL}" == "1" ]]; then
     as_root "DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-nginx"
@@ -285,7 +287,21 @@ write_runtime_env() {
   upsert_env_var "${target_env}" "NEXT_PUBLIC_API_BASE_URL" "https://${API_DOMAIN}"
   upsert_env_var "${target_env}" "CORS_ALLOWED_ORIGINS" "https://${APP_DOMAIN}"
 
+  if [[ -z "$(get_env_value "${target_env}" "COHERE_EMBED_MODEL")" ]]; then
+    upsert_env_var "${target_env}" "COHERE_EMBED_MODEL" "embed-v4.0"
+  fi
+  if [[ -z "$(get_env_value "${target_env}" "COHERE_RERANK_MODEL")" ]]; then
+    upsert_env_var "${target_env}" "COHERE_RERANK_MODEL" "rerank-v4.0-pro"
+  fi
+  if [[ -z "$(get_env_value "${target_env}" "QDRANT_URL")" ]]; then
+    upsert_env_var "${target_env}" "QDRANT_URL" "http://127.0.0.1:6333"
+  fi
+  if [[ -z "$(get_env_value "${target_env}" "QDRANT_COLLECTION")" ]]; then
+    upsert_env_var "${target_env}" "QDRANT_COLLECTION" "rental_kb_v1"
+  fi
+
   warn_if_env_missing "${target_env}" "GEMINI_API_KEY"
+  warn_if_env_missing "${target_env}" "COHERE_API_KEY"
   warn_if_env_missing "${target_env}" "GOOGLE_MAPS_API_KEY"
   warn_if_env_missing "${target_env}" "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY"
   warn_if_env_missing "${target_env}" "MINIMAX_API_KEY"
@@ -302,9 +318,29 @@ write_runtime_env() {
   fi
 }
 
+setup_qdrant() {
+  log "Ensuring local Qdrant service via Docker"
+  as_root "systemctl enable --now docker"
+  as_root "mkdir -p '${QDRANT_STORAGE_DIR}'"
+  as_root "docker rm -f '${QDRANT_CONTAINER_NAME}' >/dev/null 2>&1 || true"
+  as_root "docker run -d --name '${QDRANT_CONTAINER_NAME}' --restart unless-stopped -p 127.0.0.1:6333:6333 -v '${QDRANT_STORAGE_DIR}:/qdrant/storage' qdrant/qdrant:latest >/dev/null"
+}
+
 build_application() {
   log "Installing dependencies and building application"
   as_run_user "cd '${APP_DIR}' && pnpm install --frozen-lockfile && pnpm build"
+}
+
+run_knowledge_index() {
+  local target_env="${APP_DIR}/.env.local"
+
+  if [[ -z "$(get_env_value "${target_env}" "COHERE_API_KEY")" ]]; then
+    warn "Skipping knowledge:index because COHERE_API_KEY is missing."
+    return 0
+  fi
+
+  log "Building RAG index into local Qdrant"
+  as_run_user "cd '${APP_DIR}' && node apps/api/scripts/knowledge-index.mjs --env-file '${target_env}' --docs-file '${APP_DIR}/apps/api/src/data/rental-knowledge.json'"
 }
 
 write_pm2_config() {
@@ -420,6 +456,7 @@ enable_https() {
 post_checks() {
   wait_for_http "http://127.0.0.1:${WEB_PORT}" "Frontend"
   wait_for_http "http://127.0.0.1:${API_PORT}/api/health" "API"
+  wait_for_http "http://127.0.0.1:6333/" "Qdrant"
 }
 
 print_summary() {
@@ -450,7 +487,9 @@ main() {
   install_system_packages
   prepare_checkout
   write_runtime_env
+  setup_qdrant
   build_application
+  run_knowledge_index
   write_pm2_config
   start_processes
   write_nginx_config

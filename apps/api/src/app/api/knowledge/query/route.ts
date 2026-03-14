@@ -9,7 +9,7 @@ import {
   getRequestId,
   readJsonBody,
 } from "@/lib/http";
-import { queryKnowledge } from "@/lib/knowledge/queryKnowledge";
+import { queryKnowledgeRag } from "@/lib/knowledge/queryKnowledge";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { logInfo } from "@/lib/telemetry";
 
@@ -65,16 +65,16 @@ export async function POST(request: Request) {
     });
   }
 
-  const matches = queryKnowledge(parsed.data);
+  const payload = await queryKnowledgeRag(parsed.data);
 
   logInfo({
     message: "Knowledge query completed",
     route: "/api/knowledge/query",
     requestId,
-    provider: "local-knowledge-base",
+    provider: payload.trace.mode === "rag" ? "qdrant+cohere+gemini" : "fallback-keyword-knowledge",
   });
 
-  return createJsonResponse(knowledgeQueryResponseSchema.parse({ matches }), {
+  return createJsonResponse(knowledgeQueryResponseSchema.parse(payload), {
     origin: cors.origin,
     requestId,
     headers: createRateLimitHeaders(rateLimit),

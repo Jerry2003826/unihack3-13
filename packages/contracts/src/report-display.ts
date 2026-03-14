@@ -1,7 +1,10 @@
 import type {
   EvidenceItem,
   InspectionChecklist,
+  KnowledgeAnswer,
+  KnowledgeCitation,
   KnowledgeMatch,
+  KnowledgeQueryTrace,
   NegotiateResponse,
   PeoplePaperworkChecks,
   PropertyIntelligence,
@@ -187,6 +190,53 @@ function sanitizeKnowledgeMatch(match: KnowledgeMatch): KnowledgeMatch {
       maxItems: 4,
       itemMaxLength: 18,
       preserveSingleWord: true,
+    }),
+    retrievalScore:
+      typeof match.retrievalScore === "number" && Number.isFinite(match.retrievalScore)
+        ? Number(match.retrievalScore.toFixed(4))
+        : undefined,
+    rerankScore:
+      typeof match.rerankScore === "number" && Number.isFinite(match.rerankScore)
+        ? Number(match.rerankScore.toFixed(4))
+        : undefined,
+  };
+}
+
+function sanitizeKnowledgeCitation(citation: KnowledgeCitation): KnowledgeCitation {
+  return {
+    ...citation,
+    title: sanitizeDisplayText(citation.title, {
+      maxLength: 90,
+      maxSegments: 1,
+      fallback: citation.title,
+    }),
+  };
+}
+
+function sanitizeKnowledgeAnswer(answer: KnowledgeAnswer): KnowledgeAnswer {
+  return {
+    ...answer,
+    summary: sanitizeDisplayText(answer.summary, {
+      maxLength: 200,
+      maxSegments: 2,
+      fallback: answer.summary,
+    }),
+    keyPoints: sanitizeDisplayList(answer.keyPoints, {
+      maxItems: 5,
+      itemMaxLength: 120,
+      emptyFallback: "Review the cited guidance before signing.",
+    }),
+  };
+}
+
+function sanitizeKnowledgeTrace(trace: KnowledgeQueryTrace): KnowledgeQueryTrace {
+  return {
+    ...trace,
+    retrievedCount: Math.max(0, Math.round(trace.retrievedCount)),
+    rerankedCount: Math.max(0, Math.round(trace.rerankedCount)),
+    failures: sanitizeDisplayList(trace.failures, {
+      maxItems: 4,
+      itemMaxLength: 120,
     }),
   };
 }
@@ -566,6 +616,9 @@ export function sanitizeReportSnapshot(snapshot: ReportSnapshot): ReportSnapshot
         }
       : undefined,
     knowledgeMatches: snapshot.knowledgeMatches?.map(sanitizeKnowledgeMatch).slice(0, 4),
+    knowledgeCitations: snapshot.knowledgeCitations?.map(sanitizeKnowledgeCitation).slice(0, 6),
+    knowledgeAnswer: snapshot.knowledgeAnswer ? sanitizeKnowledgeAnswer(snapshot.knowledgeAnswer) : undefined,
+    knowledgeTrace: snapshot.knowledgeTrace ? sanitizeKnowledgeTrace(snapshot.knowledgeTrace) : undefined,
     paperworkChecks: snapshot.paperworkChecks ? sanitizePaperworkChecks(snapshot.paperworkChecks) : undefined,
   };
 }
