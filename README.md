@@ -2,6 +2,8 @@
 
 RentRadar is an AI-assisted rental inspection and decision-support system. It combines live scan guidance, image analysis, location intelligence, pre-lease advice, multi-property comparison, approximate 3D room views, exportable reports, and an autonomous server-ops agent in one monorepo.
 
+> **Quick Start — Try it now:** <https://170-64-160-8.sslip.io/>
+
 ## 1. Features
 
 - **Live Inspection** — real-time camera scanning with AI-guided targets, hazard re-inspection, and MiniMax voice alerts
