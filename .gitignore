@@ -22,6 +22,7 @@ dist/
 
 # Local storage / dev data
 .local-storage/
+qdrant_storage/
 
 # Playwright
 .playwright-cli/
