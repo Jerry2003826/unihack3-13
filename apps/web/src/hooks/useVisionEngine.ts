@@ -1,14 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  InspectionCoverage,
   LiveAnalyzeResponse,
+  LiveGuidanceCapture,
   LiveObservation,
+  LiveRoomScanState,
   LiveTarget,
   MockHazardTimelineEvent,
+  ReportEvidenceBasis,
   RoomType,
+  RoomVerdict,
 } from "@inspect-ai/contracts";
-import { liveAnalyzeResponseSchema } from "@inspect-ai/contracts";
+import { formatRoomTypeLabel, liveAnalyzeResponseSchema } from "@inspect-ai/contracts";
 import { publicAppConfig } from "@/lib/config/public";
 import { DEFAULT_DEMO_TIMELINE } from "@/lib/constants/fallback";
 import { applyLiveChecklistCapture, getInspectionChecklistFieldValue } from "@/lib/inspectionChecklist";
@@ -17,8 +22,22 @@ import {
   getGuidanceProgress,
   getGuidanceTargetForElapsed,
   getNextGuidanceTarget,
+  getVisibleGuidancePlan,
   type CaptureGuidanceTarget,
 } from "@/lib/liveGuidance";
+import {
+  addManualOverride,
+  activateHazardEscalation,
+  buildInspectionCoverageFromRoomStates,
+  buildRoomEvidenceBasis,
+  buildRoomVerdict,
+  createRoomScanState,
+  forceEndRoom,
+  markRoomTargetCompleted,
+  refreshRoomScanState,
+  setRoomCurrentTarget,
+  skipRoomTarget,
+} from "@/lib/liveRoomState";
 import {
   buildLiveAlertKey,
   hasGuidanceCoverageConfirmation,
@@ -109,7 +128,6 @@ function buildDemoResponse(args: {
             roomType: args.roomType,
             sourceEventId: activeEvent.eventId,
             detectionMode: "live-guided",
-            estimatedCost: activeEvent.hazard.estimatedCost,
           }
         : undefined,
   });
@@ -118,6 +136,7 @@ function buildDemoResponse(args: {
 export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs) {
   const {
     scanPhase,
+    hazards,
     addHazard,
     setCurrentFrame,
     setIsAnalyzing,
@@ -132,6 +151,11 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
   const [banner, setBanner] = useState<ScanBannerState>({ tone: null, text: null });
   const [guidanceTarget, setGuidanceTarget] = useState<CaptureGuidanceTarget | null>(null);
   const [activeIssueObservation, setActiveIssueObservation] = useState<LiveObservation | null>(null);
+  const [roomStates, setRoomStates] = useState<Partial<Record<RoomType, LiveRoomScanState>>>({});
+  const [guidanceCaptures, setGuidanceCaptures] = useState<LiveGuidanceCapture[]>([]);
+
+  const roomStatesRef = useRef(roomStates);
+  const guidanceCapturesRef = useRef(guidanceCaptures);
   const loopRef = useRef<number | null>(null);
   const isFetchingRef = useRef(false);
   const startTimeRef = useRef<number>(0);
@@ -144,10 +168,20 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
   const guidanceTargetRef = useRef<CaptureGuidanceTarget | null>(null);
   const lastGuidanceTargetIdRef = useRef<string | null>(null);
   const checklistCaptureKeysRef = useRef<string[]>([]);
-  const completedGuidanceIdsRef = useRef<Partial<Record<RoomType, string[]>>>({});
   const guidanceStartedAtRef = useRef<number>(0);
-  const guidanceCoverageHistoryRef = useRef<Partial<Record<RoomType, Partial<Record<string, GuidanceCoverageSample[]>>>>>({});
+  const guidanceCoverageHistoryRef = useRef<
+    Partial<Record<RoomType, Partial<Record<string, GuidanceCoverageSample[]>>>>
+  >({});
   const dismissedIssueKeysRef = useRef<string[]>([]);
+  const dismissedObservationIdsRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    roomStatesRef.current = roomStates;
+  }, [roomStates]);
+
+  useEffect(() => {
+    guidanceCapturesRef.current = guidanceCaptures;
+  }, [guidanceCaptures]);
 
   useEffect(() => {
     if (!isDemoMode) {
@@ -164,18 +198,121 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
       });
   }, [isDemoMode]);
 
-  const getCompletedGuidanceIds = useCallback((targetRoomType: RoomType) => {
-    return completedGuidanceIdsRef.current[targetRoomType] ?? [];
+  const getRoomState = useCallback((targetRoomType: RoomType) => {
+    return roomStatesRef.current[targetRoomType] ?? createRoomScanState(targetRoomType);
   }, []);
 
-  const markGuidanceCompleted = useCallback((targetRoomType: RoomType, targetId: string) => {
-    const current = completedGuidanceIdsRef.current[targetRoomType] ?? [];
-    if (current.includes(targetId)) {
-      return;
-    }
-
-    completedGuidanceIdsRef.current[targetRoomType] = [...current, targetId];
+  const commitRoomState = useCallback((targetRoomType: RoomType, nextState: LiveRoomScanState) => {
+    const nextMap = {
+      ...roomStatesRef.current,
+      [targetRoomType]: nextState,
+    };
+    roomStatesRef.current = nextMap;
+    setRoomStates(nextMap);
+    return nextState;
   }, []);
+
+  const setRoomReasoningSummary = useCallback(
+    (targetRoomType: RoomType, reasoningSummary: string | undefined, now = Date.now()) => {
+      const nextState = refreshRoomScanState(
+        {
+          ...getRoomState(targetRoomType),
+          reasoningSummary,
+        },
+        now
+      );
+      return commitRoomState(targetRoomType, nextState);
+    },
+    [commitRoomState, getRoomState]
+  );
+
+  const recordGuidanceCapture = useCallback(
+    (capture: LiveGuidanceCapture) => {
+      setGuidanceCaptures((current) => {
+        const next = [
+          ...current.filter(
+            (item) => !(item.roomType === capture.roomType && item.targetId === capture.targetId)
+          ),
+          capture,
+        ].sort((left, right) => left.capturedAt - right.capturedAt);
+        guidanceCapturesRef.current = next;
+        return next;
+      });
+    },
+    []
+  );
+
+  const completeGuidanceTarget = useCallback(
+    (args: {
+      targetRoomType: RoomType;
+      target: CaptureGuidanceTarget;
+      source: NonNullable<LiveGuidanceCapture["source"]>;
+      capturedAt: number;
+      thumbnailBase64?: string;
+      note?: string;
+    }) => {
+      const baseState = getRoomState(args.targetRoomType);
+      const withOverride =
+        args.source === "manual-marked"
+          ? addManualOverride(baseState, {
+              action: "mark-complete",
+              targetId: args.target.id,
+              note: args.note ?? `Manually marked ${args.target.label} as covered.`,
+              createdAt: args.capturedAt,
+            })
+          : baseState;
+      const completed = setRoomCurrentTarget(
+        markRoomTargetCompleted(withOverride, args.target.id, args.capturedAt),
+        undefined,
+        args.capturedAt
+      );
+      commitRoomState(args.targetRoomType, completed);
+      recordGuidanceCapture({
+        roomType: args.targetRoomType,
+        targetId: args.target.id,
+        label: args.target.label,
+        capturedAt: args.capturedAt,
+        thumbnailBase64: args.thumbnailBase64,
+        source: args.source,
+      });
+      return completed;
+    },
+    [commitRoomState, getRoomState, recordGuidanceCapture]
+  );
+
+  const registerSkippedGuidanceTarget = useCallback(
+    (targetRoomType: RoomType, target: CaptureGuidanceTarget, now = Date.now()) => {
+      const skipped = setRoomCurrentTarget(
+        skipRoomTarget(
+          addManualOverride(getRoomState(targetRoomType), {
+            action: "skip-target",
+            targetId: target.id,
+            note: `Skipped ${target.label}. Room remains incomplete until evidence is recovered or force-ended.`,
+            createdAt: now,
+          }),
+          target.id,
+          now
+        ),
+        undefined,
+        now
+      );
+      return commitRoomState(targetRoomType, skipped);
+    },
+    [commitRoomState, getRoomState]
+  );
+
+  const registerHazardEscalation = useCallback(
+    (targetRoomType: RoomType, category: LiveObservation["category"], now = Date.now()) => {
+      const escalated = activateHazardEscalation(getRoomState(targetRoomType), category, now);
+      return commitRoomState(targetRoomType, escalated);
+    },
+    [commitRoomState, getRoomState]
+  );
+
+  const getCompletedGuidanceIds = useCallback(
+    (targetRoomType: RoomType) => getRoomState(targetRoomType).completedTargets,
+    [getRoomState]
+  );
 
   const getGuidanceCoverageHistory = useCallback((targetRoomType: RoomType, targetId: string) => {
     return guidanceCoverageHistoryRef.current[targetRoomType]?.[targetId] ?? [];
@@ -214,37 +351,52 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
         skipTargetId?: string | null;
       }
     ) => {
-      const nextTarget = getNextGuidanceTarget({
-        roomType: targetRoomType,
-        completedIds: getCompletedGuidanceIds(targetRoomType),
-        currentTargetId: options?.currentTargetId,
-        skipTargetId: options?.skipTargetId,
-      });
-
-      if (nextTarget) {
-        setGuidanceTargetState(nextTarget, now);
-        return nextTarget;
+      const roomState = getRoomState(targetRoomType);
+      if (roomState.status === "forced-incomplete" || roomState.endAllowed) {
+        const settledState = setRoomCurrentTarget(roomState, undefined, now);
+        commitRoomState(targetRoomType, settledState);
+        setGuidanceTargetState(null, now);
+        return null;
       }
 
-      const fallbackTarget = getGuidanceTargetForElapsed({
+      const nextTarget = getNextGuidanceTarget({
         roomType: targetRoomType,
-        elapsedMs: now - startTimeRef.current,
+        completedIds: roomState.completedTargets,
+        currentTargetId: options?.currentTargetId ?? roomState.currentTargetId ?? null,
+        skipTargetId: options?.skipTargetId,
+        activeEscalationTargetIds: roomState.escalationTargets,
+        ignoredTargetIds: roomState.skippedTargets,
       });
-      setGuidanceTargetState(fallbackTarget, now);
-      return fallbackTarget;
+
+      commitRoomState(targetRoomType, setRoomCurrentTarget(roomState, nextTarget?.id, now));
+      setGuidanceTargetState(nextTarget, now);
+      return nextTarget;
     },
-    [getCompletedGuidanceIds, setGuidanceTargetState]
+    [commitRoomState, getRoomState, setGuidanceTargetState]
   );
 
   const getGuidanceBannerText = useCallback(
     (target: CaptureGuidanceTarget, targetRoomType: RoomType) => {
+      const roomState = getRoomState(targetRoomType);
       const progress = getGuidanceProgress({
         roomType: targetRoomType,
-        completedIds: getCompletedGuidanceIds(targetRoomType),
+        completedIds: roomState.completedTargets,
+        activeEscalationTargetIds: roomState.escalationTargets,
       });
       return `${target.bannerText} (${Math.min(progress.completed + 1, progress.total)}/${progress.total})`;
     },
-    [getCompletedGuidanceIds]
+    [getRoomState]
+  );
+
+  const getRoomReadyMessage = useCallback(
+    (targetRoomType: RoomType) => {
+      const roomState = getRoomState(targetRoomType);
+      return (
+        roomState.reasoningSummary ??
+        `AI has enough required evidence for ${formatRoomTypeLabel(targetRoomType).toLowerCase()}.`
+      );
+    },
+    [getRoomState]
   );
 
   const resumeGuidanceFlow = useCallback(
@@ -255,6 +407,20 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
       lostTargetAtRef.current = null;
       setActiveTargetId(null);
       setActiveIssueObservation(null);
+
+      const roomState = getRoomState(roomType);
+      if (roomState.endAllowed || roomState.status === "forced-incomplete") {
+        setGuidanceTargetState(null, now);
+        const readyText = roomState.endAllowed
+          ? getRoomReadyMessage(roomType)
+          : `Room was force-ended with missing evidence. Missing: ${roomState.missingTargets.length}.`;
+        setBanner({
+          tone: roomState.endAllowed ? "success" : "guidance",
+          text: args?.prefix ? `${args.prefix} ${readyText}` : readyText,
+        });
+        return;
+      }
+
       const nextTarget = selectNextGuidanceTarget(roomType, now);
       const nextText = nextTarget ? getGuidanceBannerText(nextTarget, roomType) : "Continue scanning the room.";
       const bannerText = args?.prefix ? `${args.prefix} ${nextText}` : nextText;
@@ -276,7 +442,17 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
         });
       }
     },
-    [getGuidanceBannerText, inspectionId, playAlert, roomType, selectNextGuidanceTarget, setActiveTargetId]
+    [
+      getGuidanceBannerText,
+      getRoomReadyMessage,
+      getRoomState,
+      inspectionId,
+      playAlert,
+      roomType,
+      selectNextGuidanceTarget,
+      setActiveTargetId,
+      setGuidanceTargetState,
+    ]
   );
 
   const handleGuidance = useCallback(
@@ -286,12 +462,21 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
       requestedGuidanceTarget: CaptureGuidanceTarget | null;
     }) => {
       const now = Date.now();
+      if (args.response.reasoningSummary) {
+        setRoomReasoningSummary(roomType, args.response.reasoningSummary, now);
+      }
+
       const observations = args.response.observations.filter(
         (observation) => !dismissedIssueKeysRef.current.includes(buildLiveAlertKey(observation))
       );
       const currentTarget = activeTargetRef.current;
       setLiveCandidates(observations);
+      let roomState = getRoomState(roomType);
       let guidanceCompletedThisTick = false;
+
+      if (args.response.hazardFollowUp?.targetIds.length) {
+        roomState = registerHazardEscalation(roomType, args.response.hazardFollowUp.category, now);
+      }
 
       if (args.response.checkpointCapture && args.requestedGuidanceTarget?.checkpoint) {
         const captureKey = [
@@ -305,15 +490,16 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
           !checklistCaptureKeysRef.current.includes(captureKey)
         ) {
           checklistCaptureKeysRef.current = [...checklistCaptureKeysRef.current.slice(-20), captureKey];
-          const nextChecklist = applyLiveChecklistCapture(useSessionStore.getState().inspectionChecklist, args.response.checkpointCapture, {
-            listMode: args.requestedGuidanceTarget.checkpoint.listMode,
-          });
+          const nextChecklist = applyLiveChecklistCapture(
+            useSessionStore.getState().inspectionChecklist,
+            args.response.checkpointCapture,
+            {
+              listMode: args.requestedGuidanceTarget.checkpoint.listMode,
+            }
+          );
           updateInspectionDraft({
             inspectionChecklist: nextChecklist,
           });
-          markGuidanceCompleted(roomType, args.requestedGuidanceTarget.id);
-          guidanceCompletedThisTick = true;
-          toast.success(`Recorded: ${args.requestedGuidanceTarget.checkpoint.label}`);
         }
       }
 
@@ -328,13 +514,26 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
           now
         );
 
-        if (
+        const completionThreshold =
+          args.requestedGuidanceTarget.completionRule.minCoverageConfirmations;
+        const hasCoverageThreshold =
           args.response.checkpointCoverage.status === "covered" &&
-          hasGuidanceCoverageConfirmation(coverageHistory) &&
-          !getCompletedGuidanceIds(roomType).includes(args.requestedGuidanceTarget.id)
+          hasGuidanceCoverageConfirmation(coverageHistory, completionThreshold);
+
+        if (
+          hasCoverageThreshold &&
+          !roomState.completedTargets.includes(args.requestedGuidanceTarget.id)
         ) {
-          markGuidanceCompleted(roomType, args.requestedGuidanceTarget.id);
+          roomState = completeGuidanceTarget({
+            targetRoomType: roomType,
+            target: args.requestedGuidanceTarget,
+            source:
+              args.requestedGuidanceTarget.role === "escalation" ? "hazard-followup" : "ai-covered",
+            capturedAt: now,
+            thumbnailBase64: args.frameDataUrl ?? undefined,
+          });
           guidanceCompletedThisTick = true;
+          toast.success(`Captured: ${args.requestedGuidanceTarget.label}`);
         }
       }
 
@@ -351,13 +550,17 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
 
       if (!currentTarget) {
         const primaryObservation = args.response.primaryTarget?.observationId
-          ? observations.find((observation) => observation.observationId === args.response.primaryTarget?.observationId)
+          ? observations.find(
+              (observation) =>
+                observation.observationId === args.response.primaryTarget?.observationId
+            )
           : undefined;
 
         if (
           primaryObservation &&
           shouldAutoRecordLiveHazard(primaryObservation) &&
-          (primaryObservation.attentionLevel === "move-closer" || primaryObservation.attentionLevel === "confirm")
+          (primaryObservation.attentionLevel === "move-closer" ||
+            primaryObservation.attentionLevel === "confirm")
         ) {
           setActiveIssueObservation(primaryObservation);
           activeTargetRef.current =
@@ -379,14 +582,20 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
           setActiveTargetId(primaryObservation.observationId);
           setBanner({
             tone: "guidance",
-            text: args.response.alertText ?? primaryObservation.guidanceText,
+            text:
+              args.response.alertText ??
+              args.response.guidanceDecision?.message ??
+              primaryObservation.guidanceText,
           });
           setGuidanceTargetState(null, now);
           lastGuidanceTargetIdRef.current = null;
           await playAlert({
             inspectionId: inspectionId ?? "live-scan",
             alertKey: buildLiveAlertKey(primaryObservation),
-            text: args.response.alertText ?? primaryObservation.guidanceText,
+            text:
+              args.response.alertText ??
+              args.response.guidanceDecision?.message ??
+              primaryObservation.guidanceText,
             severity: primaryObservation.severity,
           });
           return;
@@ -402,19 +611,31 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
           guidanceCompletedThisTick ||
           !currentGuidanceTarget ||
           now - guidanceStartedAtRef.current >= GUIDANCE_TARGET_FALLBACK_SKIP_MS ||
-          (!currentGuidanceTarget.checkpoint && now - guidanceStartedAtRef.current >= GUIDANCE_TARGET_DWELL_MS);
-        const shouldMarkCurrentAsCompleted =
-          guidanceCompletedThisTick ||
-          currentGuidanceCoverage.some((sample) => sample.status === "covered");
+          (!currentGuidanceTarget.checkpoint &&
+            now - guidanceStartedAtRef.current >= GUIDANCE_TARGET_DWELL_MS);
+
+        roomState = getRoomState(roomType);
+
+        if (roomState.endAllowed && !watchObservation) {
+          setGuidanceTargetState(null, now);
+          lastGuidanceTargetIdRef.current = null;
+          setActiveTargetId(null);
+          setBanner({
+            tone: "success",
+            text: args.response.guidanceDecision?.message ?? getRoomReadyMessage(roomType),
+          });
+          return;
+        }
 
         const nextGuidanceTarget = shouldAdvanceGuidance
           ? selectNextGuidanceTarget(roomType, now, {
               skipTargetId:
-                shouldMarkCurrentAsCompleted || !currentGuidanceTarget ? undefined : currentGuidanceTarget.id,
+                guidanceCompletedThisTick || !currentGuidanceTarget ? undefined : currentGuidanceTarget.id,
             })
           : currentGuidanceTarget;
         const guidanceText =
           watchObservation?.guidanceText ??
+          args.response.guidanceDecision?.message ??
           (nextGuidanceTarget ? getGuidanceBannerText(nextGuidanceTarget, roomType) : null);
         setActiveTargetId(null);
         setGuidanceTarget(nextGuidanceTarget);
@@ -423,7 +644,11 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
           text: guidanceText,
         });
 
-        if (nextGuidanceTarget && lastGuidanceTargetIdRef.current !== nextGuidanceTarget.id) {
+        if (
+          nextGuidanceTarget &&
+          lastGuidanceTargetIdRef.current !== nextGuidanceTarget.id &&
+          currentGuidanceCoverage.length === 0
+        ) {
           lastGuidanceTargetIdRef.current = nextGuidanceTarget.id;
           await playAlert({
             inspectionId: inspectionId ?? "live-scan",
@@ -453,7 +678,7 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
             tone: "guidance",
             text: nextGuidanceTarget
               ? `Target lost. ${getGuidanceBannerText(nextGuidanceTarget, roomType)}`
-              : "Target lost. Resume the room scan and cover the highlighted area again.",
+              : getRoomReadyMessage(roomType),
           });
         }
         return;
@@ -487,7 +712,8 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
         hasFocusConfirmation(focusHistoryRef.current)
       ) {
         const confirmedHazard =
-          args.response.confirmedHazard && args.response.confirmedHazard.category === matchingObservation.category
+          args.response.confirmedHazard &&
+          args.response.confirmedHazard.category === matchingObservation.category
             ? {
                 ...args.response.confirmedHazard,
                 confirmedAt: now,
@@ -529,6 +755,16 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
                 setLiveEvidenceFrame(confirmedHazard.id, thumbnail);
               }
             }
+
+            roomState = commitRoomState(
+              roomType,
+              addManualOverride(registerHazardEscalation(roomType, matchingObservation.category, now), {
+                action: "record-issue",
+                observationId: matchingObservation.observationId,
+                note: `${matchingObservation.category} auto-confirmed by AI.`,
+                createdAt: now,
+              })
+            );
           }
         }
 
@@ -537,10 +773,15 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
         setLiveCandidates([]);
         setActiveTargetId(null);
         setActiveIssueObservation(null);
-        selectNextGuidanceTarget(roomType, now);
+        const nextGuidanceTarget = selectNextGuidanceTarget(roomType, now);
         setBanner({
           tone: "success",
-          text: `${matchingObservation.category} added to report.`,
+          text: nextGuidanceTarget
+            ? `${matchingObservation.category} added to report. ${getGuidanceBannerText(
+                nextGuidanceTarget,
+                roomType
+              )}`
+            : `${matchingObservation.category} added to report.`,
         });
         toast.success(`${matchingObservation.category} added to report.`);
         return;
@@ -548,33 +789,41 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
 
       setBanner({
         tone: "guidance",
-        text: args.response.alertText ?? matchingObservation.guidanceText,
+        text:
+          args.response.alertText ??
+          args.response.guidanceDecision?.message ??
+          matchingObservation.guidanceText,
       });
       await playAlert({
         inspectionId: inspectionId ?? "live-scan",
         alertKey: buildLiveAlertKey(matchingObservation),
-        text: args.response.alertText ?? matchingObservation.guidanceText,
+        text:
+          args.response.alertText ??
+          args.response.guidanceDecision?.message ??
+          matchingObservation.guidanceText,
         severity: matchingObservation.severity,
       });
     },
     [
       addHazard,
-      dismissedIssueKeysRef,
-      getCompletedGuidanceIds,
-      inspectionId,
+      commitRoomState,
+      completeGuidanceTarget,
       getGuidanceBannerText,
       getGuidanceCoverageHistory,
-      markGuidanceCompleted,
+      getRoomReadyMessage,
+      getRoomState,
+      inspectionId,
       playAlert,
       pushGuidanceCoverageSample,
+      registerHazardEscalation,
       roomType,
       selectNextGuidanceTarget,
       setActiveTargetId,
-      setActiveIssueObservation,
+      setGuidanceTargetState,
       setLastConfirmedAt,
       setLiveCandidates,
       setLiveEvidenceFrame,
-      setGuidanceTargetState,
+      setRoomReasoningSummary,
       updateInspectionDraft,
     ]
   );
@@ -610,6 +859,7 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
 
       let response: LiveAnalyzeResponse;
       const now = Date.now();
+      const currentRoomState = getRoomState(roomType);
       const currentGuidanceTarget =
         activeTargetRef.current || useHazardStore.getState().scanPhase !== "scanning"
           ? null
@@ -636,6 +886,15 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
             activeTarget: activeTargetRef.current ?? { phase: "overview" },
             recentConfirmedIds: recentConfirmedIdsRef.current,
             guidedCheckpoint: currentGuidanceTarget?.checkpoint,
+            roomScanState: currentRoomState,
+            guidancePlan: getVisibleGuidancePlan({
+              roomType,
+              activeEscalationTargetIds: currentRoomState.escalationTargets,
+              ignoredTargetIds: currentRoomState.skippedTargets,
+            }),
+            currentGuidanceTargetId: currentGuidanceTarget?.id,
+            ignoredTargetIds: currentRoomState.skippedTargets,
+            dismissedObservationIds: dismissedObservationIdsRef.current,
           }),
         });
 
@@ -671,6 +930,7 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
     }
   }, [
     captureFrame,
+    getRoomState,
     handleGuidance,
     inspectionId,
     inspectionMode,
@@ -697,15 +957,23 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
     lostTargetAtRef.current = null;
     recentConfirmedIdsRef.current = [];
     checklistCaptureKeysRef.current = [];
-    completedGuidanceIdsRef.current = {};
     guidanceCoverageHistoryRef.current = {};
     guidanceTargetRef.current = null;
     guidanceStartedAtRef.current = 0;
     lastGuidanceTargetIdRef.current = null;
+    dismissedIssueKeysRef.current = [];
+    dismissedObservationIdsRef.current = [];
     setLiveCandidates([]);
     setActiveTargetId(null);
     setGuidanceTarget(null);
     setBanner({ tone: null, text: null });
+
+    if (scanPhase === "idle") {
+      setRoomStates({});
+      roomStatesRef.current = {};
+      setGuidanceCaptures([]);
+      guidanceCapturesRef.current = [];
+    }
 
     if (loopRef.current) {
       window.clearTimeout(loopRef.current);
@@ -723,13 +991,31 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
       return;
     }
 
+    const currentRoomState = getRoomState(roomType);
+    if (currentRoomState.endAllowed) {
+      setGuidanceTargetState(null, Date.now());
+      setBanner({
+        tone: "success",
+        text: getRoomReadyMessage(roomType),
+      });
+      return;
+    }
+
     const nextGuidanceTarget = selectNextGuidanceTarget(roomType, Date.now());
     lastGuidanceTargetIdRef.current = null;
     setBanner({
       tone: "guidance",
-      text: getGuidanceBannerText(nextGuidanceTarget, roomType),
+      text: nextGuidanceTarget ? getGuidanceBannerText(nextGuidanceTarget, roomType) : null,
     });
-  }, [getGuidanceBannerText, roomType, scanPhase, selectNextGuidanceTarget]);
+  }, [
+    getGuidanceBannerText,
+    getRoomReadyMessage,
+    getRoomState,
+    roomType,
+    scanPhase,
+    selectNextGuidanceTarget,
+    setGuidanceTargetState,
+  ]);
 
   const markCurrentGuidanceChecked = useCallback(async () => {
     const target = guidanceTargetRef.current;
@@ -769,13 +1055,20 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
       }
     }
 
-    markGuidanceCompleted(roomType, target.id);
+    completeGuidanceTarget({
+      targetRoomType: roomType,
+      target,
+      source: "manual-marked",
+      capturedAt: now,
+      thumbnailBase64: captureFrame() ?? undefined,
+      note: `${target.label} was manually marked as complete.`,
+    });
     toast.success(`Marked checked: ${target.label}`);
     await resumeGuidanceFlow({
       now,
       prefix: `${target.label} marked checked.`,
     });
-  }, [markGuidanceCompleted, resumeGuidanceFlow, roomType, updateInspectionDraft]);
+  }, [captureFrame, completeGuidanceTarget, resumeGuidanceFlow, roomType, updateInspectionDraft]);
 
   const skipCurrentGuidance = useCallback(async () => {
     const target = guidanceTargetRef.current;
@@ -784,17 +1077,20 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
     }
 
     const now = Date.now();
+    registerSkippedGuidanceTarget(roomType, target, now);
     const nextTarget = selectNextGuidanceTarget(roomType, now, {
       skipTargetId: target.id,
     });
     setActiveIssueObservation(null);
     setBanner({
       tone: "guidance",
-      text: nextTarget ? `Skipped ${target.label}. ${getGuidanceBannerText(nextTarget, roomType)}` : `Skipped ${target.label}. Continue scanning.`,
+      text: nextTarget
+        ? `Skipped ${target.label}. ${getGuidanceBannerText(nextTarget, roomType)}`
+        : `Skipped ${target.label}. This room still has missing evidence.`,
     });
     lastGuidanceTargetIdRef.current = null;
     toast.info(`Skipped: ${target.label}`);
-  }, [getGuidanceBannerText, roomType, selectNextGuidanceTarget]);
+  }, [getGuidanceBannerText, registerSkippedGuidanceTarget, roomType, selectNextGuidanceTarget]);
 
   const dismissCurrentIssue = useCallback(async () => {
     const observation = activeIssueObservation;
@@ -806,17 +1102,33 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
     if (!dismissedIssueKeysRef.current.includes(suppressionKey)) {
       dismissedIssueKeysRef.current = [...dismissedIssueKeysRef.current.slice(-20), suppressionKey];
     }
+    if (!dismissedObservationIdsRef.current.includes(observation.observationId)) {
+      dismissedObservationIdsRef.current = [
+        ...dismissedObservationIdsRef.current.slice(-20),
+        observation.observationId,
+      ];
+    }
+
+    commitRoomState(
+      roomType,
+      addManualOverride(getRoomState(roomType), {
+        action: "dismiss-issue",
+        observationId: observation.observationId,
+        note: `${observation.category} was marked as not an issue.`,
+        createdAt: Date.now(),
+      })
+    );
 
     setLiveCandidates(
-      useHazardStore
-        .getState()
-        .liveCandidates.filter((candidate) => buildLiveAlertKey(candidate) !== suppressionKey)
+      useHazardStore.getState().liveCandidates.filter(
+        (candidate) => buildLiveAlertKey(candidate) !== suppressionKey
+      )
     );
     toast.info(`Dismissed: ${observation.category}`);
     await resumeGuidanceFlow({
       prefix: "Marked as not an issue.",
     });
-  }, [activeIssueObservation, resumeGuidanceFlow, setLiveCandidates]);
+  }, [activeIssueObservation, commitRoomState, getRoomState, resumeGuidanceFlow, roomType, setLiveCandidates]);
 
   const recordCurrentIssueNow = useCallback(async () => {
     const observation = activeIssueObservation;
@@ -836,6 +1148,7 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
       roomType,
       sourceEventId: inspectionId ?? "live-scan-manual",
       detectionMode: "live-guided" as const,
+      source: "manual" as const,
     };
 
     const added = addHazard(manualHazard);
@@ -852,6 +1165,15 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
           setLiveEvidenceFrame(manualHazard.id, thumbnail);
         }
       }
+      commitRoomState(
+        roomType,
+        addManualOverride(registerHazardEscalation(roomType, observation.category, now), {
+          action: "record-issue",
+          observationId: observation.observationId,
+          note: `${observation.category} was manually added to the report.`,
+          createdAt: now,
+        })
+      );
       toast.success(`${observation.category} added to report.`);
     }
 
@@ -863,20 +1185,95 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
     activeIssueObservation,
     addHazard,
     captureFrame,
+    commitRoomState,
     inspectionId,
+    registerHazardEscalation,
     resumeGuidanceFlow,
     roomType,
     setLastConfirmedAt,
     setLiveEvidenceFrame,
   ]);
 
+  const forceEndCurrentRoom = useCallback(() => {
+    const now = Date.now();
+    const currentState = getRoomState(roomType);
+    const nextState = forceEndRoom(
+      addManualOverride(currentState, {
+        action: "force-end-room",
+        note: currentState.endAllowed
+          ? "Room ended after evidence threshold was satisfied."
+          : `Room force-ended with ${currentState.missingTargets.length} missing target(s).`,
+        createdAt: now,
+      }),
+      now
+    );
+    commitRoomState(roomType, nextState);
+    activeTargetRef.current = null;
+    setActiveIssueObservation(null);
+    setLiveCandidates([]);
+    setActiveTargetId(null);
+    setGuidanceTargetState(null, now);
+    const message = nextState.endAllowed
+      ? `${formatRoomTypeLabel(roomType)} ended. AI has enough evidence.`
+      : `Force-ended ${formatRoomTypeLabel(roomType).toLowerCase()} with missing evidence: ${nextState.missingTargets.length}.`;
+    setBanner({
+      tone: nextState.endAllowed ? "success" : "guidance",
+      text: message,
+    });
+    toast.info(message);
+    return nextState;
+  }, [commitRoomState, getRoomState, roomType, setActiveTargetId, setGuidanceTargetState, setLiveCandidates]);
+
+  const roomScanStates = useMemo(
+    () =>
+      Object.values(roomStates)
+        .filter((state): state is LiveRoomScanState => Boolean(state))
+        .sort((left, right) => (left.visitedAt ?? 0) - (right.visitedAt ?? 0)),
+    [roomStates]
+  );
+
+  const roomVerdicts = useMemo<RoomVerdict[]>(
+    () => roomScanStates.filter((state) => state.visitedAt).map((state) => buildRoomVerdict({ state, hazards })),
+    [hazards, roomScanStates]
+  );
+
+  const reportEvidenceBasis = useMemo<ReportEvidenceBasis[]>(
+    () =>
+      roomScanStates
+        .filter((state) => state.visitedAt)
+        .map((state) =>
+          buildRoomEvidenceBasis({
+            state,
+            hazards,
+            captures: guidanceCaptures,
+          })
+        ),
+    [guidanceCaptures, hazards, roomScanStates]
+  );
+
+  const inspectionCoverage = useMemo<InspectionCoverage>(
+    () =>
+      buildInspectionCoverageFromRoomStates({
+        roomStates: roomScanStates,
+        roomVerdicts,
+      }),
+    [roomScanStates, roomVerdicts]
+  );
+
   return {
     banner,
     guidanceTarget,
     activeIssueObservation,
+    currentRoomState: getRoomState(roomType),
+    roomScanStates,
+    guidanceCaptures,
+    roomVerdicts,
+    reportEvidenceBasis,
+    inspectionCoverage,
     markCurrentGuidanceChecked,
     skipCurrentGuidance,
     dismissCurrentIssue,
     recordCurrentIssueNow,
+    forceEndCurrentRoom,
   };
 }

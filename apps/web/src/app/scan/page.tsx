@@ -41,10 +41,17 @@ export default function ScanPage() {
     banner,
     guidanceTarget,
     activeIssueObservation,
+    currentRoomState,
+    roomScanStates,
+    guidanceCaptures,
+    roomVerdicts,
+    reportEvidenceBasis,
+    inspectionCoverage,
     markCurrentGuidanceChecked,
     skipCurrentGuidance,
     dismissCurrentIssue,
     recordCurrentIssueNow,
+    forceEndCurrentRoom,
   } = useVisionEngine({ captureFrame, roomType });
   const { primeSpeechSynthesis, cancelAlerts } = useVoiceAlert();
 
@@ -88,6 +95,11 @@ export default function ScanPage() {
   };
 
   const handleEndScan = async () => {
+    if (!currentRoomState.endAllowed && currentRoomState.status !== "forced-incomplete") {
+      toast.error("End or force-end the current room before generating the report.");
+      return;
+    }
+
     handlePauseScan();
     stopCamera();
     cancelAlerts();
@@ -125,6 +137,11 @@ export default function ScanPage() {
           inspectionMode: "live",
         }),
         askingRent: sessionStore.askingRent || undefined,
+        inspectionCoverage,
+        guidanceCaptures: guidanceCaptures.length > 0 ? guidanceCaptures : undefined,
+        roomScanStates: roomScanStates.length > 0 ? roomScanStates : undefined,
+        roomVerdicts: roomVerdicts.length > 0 ? roomVerdicts : undefined,
+        reportEvidenceBasis: reportEvidenceBasis.length > 0 ? reportEvidenceBasis : undefined,
         roomScenes3d: sessionStore.roomScenes3d.length > 0 ? sessionStore.roomScenes3d : undefined,
         exportAssets:
           Object.keys(liveEvidenceFrames).length > 0
@@ -290,6 +307,46 @@ export default function ScanPage() {
           </div>
           <div>Hazards: {hazards.length}</div>
         </div>
+
+        <div className="mt-3 rounded-2xl border border-white/15 bg-black/35 p-3 text-xs text-white/85 backdrop-blur">
+          <div className="flex items-center justify-between gap-3">
+            <div className="font-medium">
+              {currentRoomState.status === "forced-incomplete"
+                ? "Room force-ended"
+                : currentRoomState.endAllowed
+                  ? "Room ready to end"
+                  : "Room coverage in progress"}
+            </div>
+            <div>
+              {inspectionCoverage.coverageStatus === "complete"
+                ? "Coverage complete"
+                : inspectionCoverage.coverageStatus === "mixed"
+                  ? "Coverage mixed"
+                  : "Coverage still missing"}
+            </div>
+          </div>
+          <div className="mt-2 text-white/70">
+            Required views captured: {currentRoomState.completedTargets.length}/
+            {currentRoomState.requiredTargets.length + currentRoomState.escalationTargets.length}
+          </div>
+          {currentRoomState.currentTargetId ? (
+            <div className="mt-2 text-white/70">
+              Current target: {guidanceTarget?.label ?? currentRoomState.currentTargetId}
+            </div>
+          ) : null}
+          {currentRoomState.endBlockedReasons.length > 0 ? (
+            <div className="mt-2 space-y-1 text-white/65">
+              <div className="font-medium text-white/75">Still missing</div>
+              {currentRoomState.endBlockedReasons.slice(0, 3).map((reason) => (
+                <div key={reason}>{reason}</div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-2 text-emerald-300">
+              AI has enough evidence for this room. End the room or generate the report.
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Bottom Controls */}
@@ -316,7 +373,16 @@ export default function ScanPage() {
           className="mt-1 h-11 w-full max-w-xs rounded-full font-semibold sm:mt-2 sm:h-12"
           onClick={handleEndScan}
         >
-          End & Generate Report
+          Generate Report
+        </Button>
+
+        <Button
+          variant={currentRoomState.endAllowed ? "default" : "outline"}
+          className="h-11 w-full max-w-xs rounded-full font-semibold sm:h-12"
+          onClick={forceEndCurrentRoom}
+          disabled={currentRoomState.status === "not-started"}
+        >
+          {currentRoomState.endAllowed ? "End Current Room" : "Force End Current Room"}
         </Button>
 
         <Button

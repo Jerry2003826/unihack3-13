@@ -66,10 +66,13 @@ export function trimGuidanceCoverageHistory(history: GuidanceCoverageSample[], n
   return history.filter((sample) => now - sample.at <= 8_000).slice(-3);
 }
 
-export function hasGuidanceCoverageConfirmation(history: GuidanceCoverageSample[]) {
+export function hasGuidanceCoverageConfirmation(
+  history: GuidanceCoverageSample[],
+  minimumCoveredSamples = 2
+) {
   const recent = history.slice(-3);
   const coveredCount = recent.filter((sample) => sample.status === "covered").length;
-  return coveredCount >= 2;
+  return coveredCount >= minimumCoveredSamples;
 }
 
 export function buildLiveAlertKey(observation: LiveObservation) {

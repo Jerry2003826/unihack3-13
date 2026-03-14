@@ -389,6 +389,8 @@ export default function ReportPage() {
         lightingScoreAuto: currentSnapshot.lightingScoreAuto,
         lightingScoreManual: currentSnapshot.lightingScoreManual,
         preferenceProfile: currentSnapshot.inputs.preferenceProfile,
+        roomScanStates: currentSnapshot.roomScanStates,
+        roomVerdicts: currentSnapshot.roomVerdicts,
       });
 
       await applyPatch({
@@ -1381,6 +1383,11 @@ export default function ReportPage() {
                     <Badge variant="outline" className="border-border/70 text-foreground">
                       Confidence: {snapshot.inspectionCoverage.confidence}
                     </Badge>
+                    {snapshot.inspectionCoverage.coverageStatus ? (
+                      <Badge variant="outline" className="border-border/70 text-foreground">
+                        Status: {snapshot.inspectionCoverage.coverageStatus}
+                      </Badge>
+                    ) : null}
                     {snapshot.inspectionCoverage.roomsSeen.filter((room) => room !== "unknown").map((room) => (
                       <Badge key={room} variant="outline" className="border-border/70 text-foreground">
                         {formatRoomTypeLabel(room)}
@@ -1404,6 +1411,30 @@ export default function ReportPage() {
                       </ul>
                     </ExpandableDetails>
                   ) : null}
+                  {snapshot.inspectionCoverage.roomSummaries?.length ? (
+                    <ExpandableDetails label="Room coverage summary">
+                      <div className="grid gap-3">
+                        {snapshot.inspectionCoverage.roomSummaries.map((roomSummary) => (
+                          <div
+                            key={`${roomSummary.roomType}-${roomSummary.coverageStatus}`}
+                            className="rounded-xl border border-border/70 bg-muted/20 p-3"
+                          >
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge variant="outline" className="border-border/70 text-foreground">
+                                {formatRoomTypeLabel(roomSummary.roomType)}
+                              </Badge>
+                              <Badge variant="outline" className="border-border/70 text-foreground">
+                                Verdict: {roomSummary.verdict}
+                              </Badge>
+                              <Badge variant="outline" className="border-border/70 text-foreground">
+                                Coverage: {roomSummary.coverageStatus}
+                              </Badge>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </ExpandableDetails>
+                  ) : null}
                 </>
               ) : (
                 <ReportSectionSkeleton copy="Assessing inspection coverage..." />
@@ -1411,9 +1442,111 @@ export default function ReportPage() {
             </CardContent>
           </Card>
 
+          {snapshot.reportEvidenceBasis?.length ? (
+            <Card className="border-border/70 bg-card/85 xl:col-span-2">
+              <CardHeader>
+                <CardDescription>11. Room Evidence Basis</CardDescription>
+                <CardTitle>Why AI considers each room complete or incomplete</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4">
+                {snapshot.reportEvidenceBasis.map((basis) => (
+                  <div
+                    key={`${basis.roomType}-${basis.verdict.status}`}
+                    className="rounded-2xl border border-border/70 bg-muted/20 p-4"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" className="border-border/70 text-foreground">
+                        {formatRoomTypeLabel(basis.roomType)}
+                      </Badge>
+                      <Badge variant="outline" className="border-border/70 text-foreground">
+                        Verdict: {basis.verdict.status}
+                      </Badge>
+                    </div>
+                    <div className="mt-3 text-sm font-medium text-foreground">{basis.verdict.summary}</div>
+                    <div className="mt-1 text-sm text-muted-foreground">{basis.reasoningSummary}</div>
+
+                    <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                      <div className="rounded-xl border border-border/70 bg-card/50 p-3">
+                        <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                          Required Views Captured
+                        </div>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                          {basis.requiredViewsCaptured.length > 0 ? (
+                            basis.requiredViewsCaptured.map((item) => <li key={item}>{item}</li>)
+                          ) : (
+                            <li>No required views were captured for this room.</li>
+                          )}
+                        </ul>
+                      </div>
+
+                      <div className="rounded-xl border border-border/70 bg-card/50 p-3">
+                        <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                          Missing Evidence
+                        </div>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                          {basis.missingEvidence.length > 0 ? (
+                            basis.missingEvidence.map((item) => <li key={item}>{item}</li>)
+                          ) : (
+                            <li>No required evidence is currently missing.</li>
+                          )}
+                        </ul>
+                      </div>
+
+                      <div className="rounded-xl border border-border/70 bg-card/50 p-3">
+                        <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                          Hazards Confirmed From These Views
+                        </div>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                          {basis.confirmedHazards.length > 0 ? (
+                            basis.confirmedHazards.map((hazard) => (
+                              <li key={hazard.hazardId}>
+                                {hazard.summary}
+                                {hazard.targetIds.length > 0 ? ` · via ${hazard.targetIds.join(", ")}` : ""}
+                              </li>
+                            ))
+                          ) : (
+                            <li>No hazards were confirmed from this room's captured evidence.</li>
+                          )}
+                        </ul>
+                      </div>
+
+                      <div className="rounded-xl border border-border/70 bg-card/50 p-3">
+                        <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                          Manual Overrides
+                        </div>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                          {basis.manualOverrides.length > 0 ? (
+                            basis.manualOverrides.map((override) => (
+                              <li key={override.overrideId}>
+                                {override.action}
+                                {override.note ? ` · ${override.note}` : ""}
+                              </li>
+                            ))
+                          ) : (
+                            <li>No manual overrides were recorded for this room.</li>
+                          )}
+                        </ul>
+                      </div>
+                    </div>
+
+                    {basis.unverifiedItems.length > 0 ? (
+                      <ExpandableDetails label="Unverified items">
+                        <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
+                          {basis.unverifiedItems.map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      </ExpandableDetails>
+                    ) : null}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
+
           <Card className="border-border/70 bg-card/85 xl:col-span-2">
             <CardHeader>
-              <CardDescription>11. Pre-lease Action Guide</CardDescription>
+              <CardDescription>12. Pre-lease Action Guide</CardDescription>
               <CardTitle>What to negotiate or re-check next</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1456,7 +1589,7 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85 xl:col-span-2">
             <CardHeader>
-              <CardDescription>12. Inspection Checklist & Entry Notes</CardDescription>
+              <CardDescription>13. Inspection Checklist & Entry Notes</CardDescription>
               <CardTitle>Structured notes captured during the inspection</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">

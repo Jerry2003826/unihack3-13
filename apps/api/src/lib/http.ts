@@ -29,6 +29,21 @@ export function getAllowedOrigin(request: Request): string | null {
     return null;
   }
 
+  try {
+    const forwardedProto = request.headers.get("x-forwarded-proto");
+    const forwardedHost =
+      request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+    const requestOrigin =
+      forwardedProto && forwardedHost
+        ? `${forwardedProto}://${forwardedHost}`
+        : new URL(request.url).origin;
+    if (origin === requestOrigin) {
+      return origin;
+    }
+  } catch {
+    // Ignore malformed request URLs and fall back to explicit allowlist checks.
+  }
+
   if (appEnv.corsAllowedOrigins.has(origin)) {
     return origin;
   }

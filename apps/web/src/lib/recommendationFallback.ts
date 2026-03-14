@@ -5,14 +5,30 @@ import type {
   InspectionChecklist,
   InspectionCoverage,
   InspectionMode,
+  LiveRoomScanState,
   PeoplePaperworkChecks,
   PreferenceProfile,
   PreLeaseActionGuide,
   PropertyIntelligence,
+  RoomVerdict,
 } from "@inspect-ai/contracts";
 import { buildReportScoreBundle } from "@inspect-ai/contracts";
+import { buildInspectionCoverageFromRoomStates } from "@/lib/liveRoomState";
 
-function buildInspectionCoverage(mode: InspectionMode, hazards: Hazard[]): InspectionCoverage {
+function buildInspectionCoverage(args: {
+  mode: InspectionMode;
+  hazards: Hazard[];
+  roomScanStates?: LiveRoomScanState[];
+  roomVerdicts?: RoomVerdict[];
+}): InspectionCoverage {
+  if (args.roomScanStates?.length) {
+    return buildInspectionCoverageFromRoomStates({
+      roomStates: args.roomScanStates,
+      roomVerdicts: args.roomVerdicts,
+    });
+  }
+
+  const { mode, hazards } = args;
   const roomsSeen = [...new Set(hazards.map((hazard) => hazard.roomType).filter(Boolean))] as InspectionCoverage["roomsSeen"];
   const confidence = hazards.length >= 4 ? "high" : hazards.length >= 2 ? "medium" : "low";
 
@@ -124,6 +140,8 @@ export function buildRecommendationFallbackBundle(args: {
   lightingScoreAuto?: number;
   lightingScoreManual?: number;
   preferenceProfile?: PreferenceProfile;
+  roomScanStates?: LiveRoomScanState[];
+  roomVerdicts?: RoomVerdict[];
 }) {
   const { recommendation, fitScore } = buildReportScoreBundle({
     hazards: args.hazards,
@@ -137,7 +155,12 @@ export function buildRecommendationFallbackBundle(args: {
     preferenceProfile: args.preferenceProfile,
   });
   const evidenceSummary = buildEvidenceSummary(args.hazards, args.intelligence);
-  const inspectionCoverage = buildInspectionCoverage(args.inspectionMode, args.hazards);
+  const inspectionCoverage = buildInspectionCoverage({
+    mode: args.inspectionMode,
+    hazards: args.hazards,
+    roomScanStates: args.roomScanStates,
+    roomVerdicts: args.roomVerdicts,
+  });
   const preLeaseActionGuide = buildActionGuide({
     hazards: args.hazards,
     intelligence: args.intelligence,

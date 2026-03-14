@@ -177,6 +177,16 @@ export const inspectionCoverageSchema = z.object({
   missingAreas: z.array(z.string()),
   confidence: z.enum(["low", "medium", "high"]),
   warning: z.string().optional(),
+  coverageStatus: z.enum(["insufficient-evidence", "mixed", "complete"]).optional(),
+  roomSummaries: z
+    .array(
+      z.object({
+        roomType: roomTypeSchema,
+        verdict: z.enum(["pass", "caution", "fail", "insufficient-evidence"]),
+        coverageStatus: z.enum(["not-started", "in-progress", "complete", "forced-incomplete"]),
+      })
+    )
+    .optional(),
 });
 export type InspectionCoverage = z.infer<typeof inspectionCoverageSchema>;
 
@@ -333,6 +343,154 @@ export const liveCheckpointCoverageSchema = z.object({
   note: z.string().optional(),
 });
 export type LiveCheckpointCoverage = z.infer<typeof liveCheckpointCoverageSchema>;
+
+export const liveGuidanceTargetRoleSchema = z.enum(["required", "optional", "escalation"]);
+export type LiveGuidanceTargetRole = z.infer<typeof liveGuidanceTargetRoleSchema>;
+
+export const liveGuidanceCompletionRuleSchema = z.object({
+  minCoverageConfirmations: z.number().int().min(1).max(6),
+  requiresChecklistCapture: z.boolean().optional(),
+});
+export type LiveGuidanceCompletionRule = z.infer<typeof liveGuidanceCompletionRuleSchema>;
+
+export const liveGuidanceTargetSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  bannerText: z.string(),
+  voiceText: z.string(),
+  boundingBox: boundingBoxSchema,
+  role: liveGuidanceTargetRoleSchema,
+  reason: z.string(),
+  captureHint: z.string().optional(),
+  checkpoint: liveChecklistTargetSchema.optional(),
+  completionRule: liveGuidanceCompletionRuleSchema,
+  followUpTargets: z.array(z.string()).optional(),
+});
+export type LiveGuidanceTarget = z.infer<typeof liveGuidanceTargetSchema>;
+
+export const liveGuidanceCaptureSchema = z.object({
+  roomType: roomTypeSchema,
+  targetId: z.string(),
+  label: z.string(),
+  capturedAt: z.number(),
+  thumbnailBase64: z.string().optional(),
+  source: z.enum(["ai-covered", "manual-marked", "hazard-followup"]).optional(),
+});
+export type LiveGuidanceCapture = z.infer<typeof liveGuidanceCaptureSchema>;
+
+export const liveManualOverrideActionSchema = z.enum([
+  "mark-complete",
+  "skip-target",
+  "dismiss-issue",
+  "record-issue",
+  "force-end-room",
+]);
+export type LiveManualOverrideAction = z.infer<typeof liveManualOverrideActionSchema>;
+
+export const liveManualOverrideSchema = z.object({
+  overrideId: z.string(),
+  roomType: roomTypeSchema,
+  action: liveManualOverrideActionSchema,
+  targetId: z.string().optional(),
+  observationId: z.string().optional(),
+  note: z.string().optional(),
+  createdAt: z.number(),
+});
+export type LiveManualOverride = z.infer<typeof liveManualOverrideSchema>;
+
+export const liveHazardEscalationSchema = z.object({
+  category: hazardCategorySchema,
+  targetIds: z.array(z.string()),
+  triggeredAt: z.number(),
+  reason: z.string(),
+});
+export type LiveHazardEscalation = z.infer<typeof liveHazardEscalationSchema>;
+
+export const liveRoomStateStatusSchema = z.enum(["not-started", "in-progress", "complete", "forced-incomplete"]);
+export type LiveRoomStateStatus = z.infer<typeof liveRoomStateStatusSchema>;
+
+export const liveRoomCoverageStatusSchema = z.enum(["insufficient-evidence", "complete"]);
+export type LiveRoomCoverageStatus = z.infer<typeof liveRoomCoverageStatusSchema>;
+
+export const roomVerdictStatusSchema = z.enum(["pass", "caution", "fail", "insufficient-evidence"]);
+export type RoomVerdictStatus = z.infer<typeof roomVerdictStatusSchema>;
+
+export const roomVerdictSchema = z.object({
+  roomType: roomTypeSchema,
+  status: roomVerdictStatusSchema,
+  summary: z.string(),
+  reasons: z.array(z.string()),
+});
+export type RoomVerdict = z.infer<typeof roomVerdictSchema>;
+
+export const liveRoomScanStateSchema = z.object({
+  roomType: roomTypeSchema,
+  visitedAt: z.number().optional(),
+  lastUpdatedAt: z.number().optional(),
+  endedAt: z.number().optional(),
+  status: liveRoomStateStatusSchema,
+  currentTargetId: z.string().optional(),
+  requiredTargets: z.array(z.string()),
+  optionalTargets: z.array(z.string()),
+  escalationTargets: z.array(z.string()),
+  completedTargets: z.array(z.string()),
+  missingTargets: z.array(z.string()),
+  skippedTargets: z.array(z.string()),
+  coverageStatus: liveRoomCoverageStatusSchema,
+  endAllowed: z.boolean(),
+  endBlockedReasons: z.array(z.string()),
+  manualOverrides: z.array(liveManualOverrideSchema),
+  hazardEscalations: z.array(liveHazardEscalationSchema),
+  reasoningSummary: z.string().optional(),
+});
+export type LiveRoomScanState = z.infer<typeof liveRoomScanStateSchema>;
+
+export const reportEvidenceHazardBasisSchema = z.object({
+  hazardId: z.string(),
+  summary: z.string(),
+  source: z.enum(["model", "manual", "rule"]),
+  targetIds: z.array(z.string()),
+});
+export type ReportEvidenceHazardBasis = z.infer<typeof reportEvidenceHazardBasisSchema>;
+
+export const reportEvidenceBasisSchema = z.object({
+  roomType: roomTypeSchema,
+  verdict: roomVerdictSchema,
+  reasoningSummary: z.string(),
+  requiredViewsCaptured: z.array(z.string()),
+  missingEvidence: z.array(z.string()),
+  confirmedHazards: z.array(reportEvidenceHazardBasisSchema),
+  manualOverrides: z.array(liveManualOverrideSchema),
+  unverifiedItems: z.array(z.string()),
+});
+export type ReportEvidenceBasis = z.infer<typeof reportEvidenceBasisSchema>;
+
+export const liveGuidanceDecisionSchema = z.object({
+  targetId: z.string().optional(),
+  action: z.enum(["continue-current-target", "advance-to-target", "room-ready", "need-more-evidence"]),
+  message: z.string(),
+});
+export type LiveGuidanceDecision = z.infer<typeof liveGuidanceDecisionSchema>;
+
+export const liveCoverageUpdateSchema = z.object({
+  completedTargetIds: z.array(z.string()),
+  missingTargetIds: z.array(z.string()),
+  coverageStatus: liveRoomCoverageStatusSchema,
+});
+export type LiveCoverageUpdate = z.infer<typeof liveCoverageUpdateSchema>;
+
+export const liveHazardFollowUpSchema = z.object({
+  category: hazardCategorySchema,
+  targetIds: z.array(z.string()),
+  reason: z.string(),
+});
+export type LiveHazardFollowUp = z.infer<typeof liveHazardFollowUpSchema>;
+
+export const liveRoomReadinessSchema = z.object({
+  endAllowed: z.boolean(),
+  blockedReasons: z.array(z.string()),
+});
+export type LiveRoomReadiness = z.infer<typeof liveRoomReadinessSchema>;
 
 export const nearbyPlaceSchema = z.object({
   placeId: z.string().optional(),
@@ -519,6 +677,10 @@ export const reportSnapshotSchema = z.object({
   preLeaseActionGuide: preLeaseActionGuideSchema.optional(),
   knowledgeMatches: z.array(knowledgeMatchSchema).optional(),
   paperworkChecks: peoplePaperworkChecksSchema.optional(),
+  guidanceCaptures: z.array(liveGuidanceCaptureSchema).optional(),
+  roomScanStates: z.array(liveRoomScanStateSchema).optional(),
+  roomVerdicts: z.array(roomVerdictSchema).optional(),
+  reportEvidenceBasis: z.array(reportEvidenceBasisSchema).optional(),
   roomScenes3d: z.array(roomScene3DSchema).optional(),
   exportAssets: z.object({
     staticMapImageBase64: z.string().optional(),
@@ -557,6 +719,11 @@ export const liveAnalyzeRequestSchema = z.object({
   activeTarget: liveTargetSchema.optional(),
   recentConfirmedIds: z.array(z.string()).optional(),
   guidedCheckpoint: liveChecklistTargetSchema.optional(),
+  roomScanState: liveRoomScanStateSchema.optional(),
+  guidancePlan: z.array(liveGuidanceTargetSchema).optional(),
+  currentGuidanceTargetId: z.string().optional(),
+  ignoredTargetIds: z.array(z.string()).optional(),
+  dismissedObservationIds: z.array(z.string()).optional(),
 });
 export type LiveAnalyzeRequest = z.infer<typeof liveAnalyzeRequestSchema>;
 
@@ -567,6 +734,11 @@ export const liveAnalyzeResponseSchema = z.object({
   confirmedHazard: hazardSchema.optional(),
   checkpointCapture: liveChecklistCaptureSchema.optional(),
   checkpointCoverage: liveCheckpointCoverageSchema.optional(),
+  guidanceDecision: liveGuidanceDecisionSchema.optional(),
+  coverageUpdate: liveCoverageUpdateSchema.optional(),
+  hazardFollowUp: liveHazardFollowUpSchema.optional(),
+  roomReadiness: liveRoomReadinessSchema.optional(),
+  reasoningSummary: z.string().optional(),
 });
 export type LiveAnalyzeResponse = z.infer<typeof liveAnalyzeResponseSchema>;
 
