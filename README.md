@@ -12,7 +12,7 @@ RentRadar is an AI-assisted rental inspection and decision-support system. It co
 
 ### 1. 项目概览
 
-RentRadar 解决的是“看房时信息不完整、签约前风险难判断、检查记录容易遗漏”的问题。当前系统支持：
+RentRadar 解决的是"看房时信息不完整、签约前风险难判断、检查记录容易遗漏"的问题。当前系统支持：
 
 - 实时扫描 `Live Inspection`
   - 相机实时取景
@@ -247,464 +247,293 @@ DO_SPACES_KEY=
 DO_SPACES_SECRET=
 ```
 
-#### 其他
+#### CORS 与部署
 
 ```bash
-TAVILY_API_KEY=
-DATABASE_URL=
-DEPLOY_TARGET=local
-CORS_ALLOWED_ORIGINS=http://localhost:3000
+DEPLOY_TARGET=              # local | api | frontend
+CORS_ALLOWED_ORIGINS=       # 逗号分隔的 origin 列表
 ```
 
-说明：
+### 9. 技术实现细节
 
-- 即使没有完整三方配置，项目中很多链路也带有本地 fallback
-- 但若要体验完整能力，至少应配置：
-  - `GEMINI_API_KEY`
-  - `GOOGLE_MAPS_API_KEY`
-  - `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`
-  - `MINIMAX_API_KEY`
+#### 9.1 实时扫描工作流
 
-### 9. 软件使用方法
+实时扫描（Live Inspection）是系统的核心功能，采用多阶段 AI 引导机制：
 
-#### 9.1 Live Inspection
+**阶段一：视觉捕获**
+- 使用 `useVisionEngine` hook 捕获视频帧
+- 通过 Canvas API 提取 Base64 图像数据
+- 实时发送到 `/api/analyze/live` 端点
 
-1. 打开首页 `/`
-2. 点击 `Enter Deep Scan`
-3. 录入：
-   - 地址
-   - 中介
-   - 可选租金
-   - 可选 listing URL
-4. 点击 `Start Live Scan`
-5. 在 `/scan` 页面：
-   - 启动相机
-   - 跟着 AI 提示拍关键区域
-   - 若 AI 识别到高风险，会引导你靠近复检
-   - 语音播报由 MiniMax 输出
-6. 扫描结束后生成报告
+**阶段二：AI 分析**
+- Gemini 2.5 Flash 模型分析当前画面
+- 识别房间类型、潜在隐患、拍摄角度
+- 返回结构化观察结果
 
-#### 9.2 Manual Upload
+**阶段三：引导反馈**
+- 根据分析结果生成语音播报（MiniMax TTS）
+- 视觉引导：高亮需要拍摄的关键区域
+- 检查清单自动更新
 
-1. 首页点击 `Manual Override`
-2. 或直接进入 `/manual`
-3. 上传房屋图片
-4. 系统会：
-   - 压缩图片
-   - 读取 EXIF
-   - 上传文件
-   - 触发 AI 分析
-5. 自动跳转到报告页
+**阶段四：复检确认**
+- 高风险问题需要用户靠近并确认
+- AI 验证拍摄质量后才计入报告
+- 避免误报和遗漏
 
-#### 9.3 3D Scan Studio
+#### 9.2 知识库 RAG 架构
 
-1. 在 `/scan` 页面点击 `Open 3D Scan Studio`
-2. 按步骤拍摄房间关键视角
-3. 点击 `Generate 3D Demo`
-4. 系统会生成一个近似 3D 房间示意
-5. 可以在 3D 视图里：
-   - 调整 marker 位置
-   - 将 suggested marker 加入正式报告
+系统内置租房知识库，采用 RAG（Retrieval-Augmented Generation）架构：
 
-注意：
-
-- 这不是 LiDAR 级精确重建
-- 当前是单房间、近似 3D、用于问题可视化和报告增强
-
-#### 9.4 查看报告
-
-报告页包含：
-
-- Property Risk Score
-- Fit Score
-- Decision Recommendation
-- Hazard List
-- Area Intelligence
-- Community Feedback
-- Agency Background
-- Evidence & Confidence
-- Inspection Coverage
-- Pre-lease Action Guide
-- Knowledge Base Guidance
-- People & Paperwork Checks
-- 3D Room View
-- Export Actions
-
-#### 9.5 多房源比较
-
-1. 先生成多份报告
-2. 进入 `/compare`
-3. 选择已保存报告
-4. 调整权重
-5. 生成 comparison report
-
-#### 9.6 历史记录
-
-进入 `/history` 可查看：
-
-- 最近搜索
-- 最近比较
-- 从历史恢复输入
-- 重新打开报告或比较结果
-
-### 10. 测试与质量检查
-
-#### Lint
-
-```bash
-pnpm lint
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│ rental-     │────▶│  Text       │────▶│  Cohere     │
+│ knowledge.  │     │  Chunking   │     │  Embedding  │
+│ json        │     │  (420 chars)│     │             │
+└─────────────┘     └─────────────┘     └──────┬──────┘
+                                               │
+                                               ▼
+                                        ┌─────────────┐
+                                        │  Qdrant     │
+                                        │  Vector DB  │
+                                        └─────────────┘
+                                               │
+                                               ▼
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  User       │────▶│  Dense      │────▶│  Gemini     │
+│  Query      │     │  Retrieval  │     │  Generate   │
+└─────────────┘     └─────────────┘     └─────────────┘
 ```
 
-#### Unit Test
+**实现细节：**
+- **文档切分**：420 字符滑动窗口，保留上下文
+- **向量嵌入**：Cohere embed-english-v3 模型
+- **向量存储**：Qdrant 本地/远程混合部署
+- **检索策略**：Top-12 候选 + 重排序
+- **答案生成**：Gemini 结合检索内容生成可执行建议
+
+#### 9.3 3D 房间重建
+
+非 LiDAR 的 AI 驱动房间重建：
+
+**输入**：多视角房间照片（2-4 张）
+**处理流程**：
+1. 每张图片独立分析（Gemini Vision）
+2. 提取房间类型、家具布局、尺寸估算
+3. 多视角融合生成统一场景描述
+4. 合成 3D 语义模型（非精确几何，而是功能区域）
+
+**输出**：
+- 房间边界框
+- 家具位置（相对坐标）
+- 风险区域标注
+- 可交互 3D 查看器（Three.js）
+
+#### 9.4 多源情报融合
+
+报告中的情报来自多个数据源：
+
+| 数据源 | 用途 | API |
+|--------|------|-----|
+| Google Maps Geocoding | 地址标准化 | `/api/geocode/reverse` |
+| Google Places API | 周边设施查询 | `lib/providers/googlePlaces.ts` |
+| Tavily Search | 网络搜索增强 | `lib/providers/tavily.ts` |
+| Gemini Grounded | 带引用的生成 | `lib/ai.ts` |
+
+**情报类型：**
+- **地理情报**：交通、噪音、安全评分
+- **社区情报**：学校、医院、商圈
+- **中介情报**：背景调查、历史评价
+- **租赁情报**：市场价、合同条款分析
+
+#### 9.5 离线优先架构
+
+系统采用离线优先设计：
+
+**数据层：**
+- IndexedDB 存储报告快照
+- Zustand + persist 状态持久化
+- 刷新后自动恢复会话
+
+**关键实现：**
+```typescript
+// 报告快照存储
+const saveReportSnapshot = async (snapshot: ReportSnapshot) => {
+  const db = await openDB('rentradar', 1);
+  await db.put('reports', snapshot, snapshot.reportId);
+};
+
+// 状态恢复
+useEffect(() => {
+  const loadSession = async () => {
+    const saved = await getSavedSession();
+    if (saved) restoreSession(saved);
+  };
+  loadSession();
+}, []);
+```
+
+#### 9.6 多模型 AI 策略
+
+不同任务使用最优模型：
+
+| 任务 | 模型 | 原因 |
+|------|------|------|
+| 图片分析 | Gemini 2.5 Flash | 速度快、成本低 |
+| 场景合成 | Gemini 2.5 Pro | 需要复杂推理 |
+| 情报生成 | Gemini 2.5 Flash-Lite | 平衡质量与速度 |
+| 合同分析 | Gemini 2.5 Pro | 需要深度理解 |
+| 实时引导 | Gemini 2.5 Flash | 低延迟要求 |
+
+#### 9.7 类型安全架构
+
+全链路类型安全：
+
+**Contracts 包：**
+```typescript
+// packages/contracts/src/schemas.ts
+export const HazardSchema = z.object({
+  id: z.string(),
+  type: z.enum(['structural', 'electrical', 'plumbing', 'environmental']),
+  severity: z.enum(['low', 'medium', 'high', 'critical']),
+  description: z.string(),
+  evidence: z.array(z.string()), // image URLs
+});
+
+export type Hazard = z.infer<typeof HazardSchema>;
+```
+
+**API 端点类型：**
+```typescript
+// apps/api/src/app/api/analyze/route.ts
+export async function POST(request: Request) {
+  const body = await request.json();
+  const parsed = AnalyzeRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return createErrorResponse({
+      code: 'validation_error',
+      message: 'Invalid request body',
+      status: 400,
+    });
+  }
+  // parsed.data 完全类型安全
+}
+```
+
+### 10. 测试
+
+#### 单元测试
 
 ```bash
 pnpm test:unit
 ```
 
-#### E2E Test
+使用 Vitest，覆盖：
+- 工具函数
+- Store 逻辑
+- 类型转换
+
+#### E2E 测试
 
 ```bash
 pnpm test:e2e
 ```
 
-#### 全量构建检查
+使用 Playwright，覆盖：
+- 完整用户流程
+- 跨页面状态保持
+- 响应式布局
+
+### 11. 部署
+
+#### VPS 部署
+
+参考 `DEPLOY.md` 和 `scripts/deploy-vps.sh`：
 
 ```bash
-pnpm build
+# 配置服务器
+./scripts/deploy-vps.sh
+
+# 或使用 PM2
+pm2 start ecosystem.config.js
 ```
 
-### 11. 当前实现特点
+#### Vercel 部署
 
-- 实时扫描采用引导式复检，而不是每帧直接入报告
-- Live scan 与 Manual upload 共用报告管线
-- 报告是 refresh-safe 的本地快照
-- 支持 3D Room View 的问题标记
-- 支持多房源比较
-- 支持知识库增强建议
-- 支持 Google Maps + Web 搜索融合情报
+```bash
+# 前端
+vercel --prod
 
-### 12. 已知限制
+# API（需要配置环境变量）
+vercel --prod --cwd apps/api
+```
 
-- 3D 扫描目前是近似模型，不是高精度空间重建
-- 某些三方 API 未配置时会走 fallback
-- 部分公开网页信号质量依赖 Google 搜索结果本身
-- 报告分享目前仍以本地 snapshot 为主，不是公网永久链接
+### 12. 安全最佳实践
+
+- 所有 API 密钥存储在服务端 `.env.local`
+- 前端仅使用 `NEXT_PUBLIC_` 前缀的公开配置
+- CORS 白名单限制跨域请求
+- 上传使用预签名 URL，避免暴露密钥
+- 输入数据 Zod 验证
+- 输出数据类型安全
 
 ### 13. 开发建议
 
-- 新增字段时，优先改 `packages/contracts`
-- API 响应必须走 Zod schema 校验
-- 前后端共享数据结构应保持单一来源
-- 新增页面状态时，尽量保持 `idle/loading/success/fallback/error` 一致
+#### 添加新页面
+
+1. 在 `apps/web/src/app/` 创建目录
+2. 添加 `page.tsx` 和可选的 `loading.tsx`
+3. 使用 `useSessionStore` 管理状态
+4. 添加路由到 `next.config.ts` 的 headers 配置
+
+#### 添加新 API
+
+1. 在 `apps/api/src/app/api/` 创建目录结构
+2. 添加 `route.ts`，导出 HTTP 方法处理函数
+3. 使用 `ensureCrossOriginAllowed` 处理 CORS
+4. 使用 Zod schema 验证输入
+5. 添加类型到 `packages/contracts`
+
+#### 添加新 Agent
+
+1. 在 `apps/api/src/lib/agents/` 创建文件
+2. 导出 `run` 函数，接收上下文参数
+3. 使用 `callGemini` 或 `callGeminiJson` 调用模型
+4. 返回结构化结果
 
 ---
 
 ## English
 
-### 1. Overview
+### Overview
 
-RentRadar is an AI-assisted rental inspection and decision-support platform. It helps renters or property viewers inspect homes, collect evidence, understand local risk signals, compare multiple properties, and export decision-ready reports.
+RentRadar is an AI-assisted rental inspection system that combines real-time scanning, image analysis, location intelligence, and report generation.
 
-Current capabilities:
+### Key Features
 
-- `Live Inspection`
-  - camera-based guided scan
-  - AI-guided capture flow
-  - guided recheck before high-risk issues are recorded
-  - MiniMax voice alerts
-- `Manual Upload`
-  - upload room/property photos
-  - AI hazard analysis
-  - direct report generation
-- `Report`
-  - risk scoring
-  - geo/community/agency intelligence
-  - evidence summary
-  - pre-lease action guide
-  - 3D Room View
-- `Compare`
-  - compare saved reports with weighted scoring
-- `History`
-  - local search and comparison history
-- `Knowledge Base`
-  - renter-oriented guidance and checklist enrichment
+- **Live Inspection**: AI-guided real-time camera scanning with voice alerts
+- **Manual Upload**: Batch image analysis for existing photos
+- **Report Center**: Comprehensive risk assessment with 3D room views
+- **Multi-property Compare**: Side-by-side comparison with recommendations
+- **Knowledge Base**: RAG-enhanced rental advice
 
-### 2. Tech Stack
+### Tech Stack
 
-#### Frontend
+- **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS v4, Three.js
+- **Backend**: Next.js API Routes, Zod, Google Gemini
+- **AI**: Multi-model strategy (Gemini 2.5 Flash/Pro), Tavily Search, MiniMax TTS
+- **Storage**: IndexedDB, Qdrant Vector DB
+- **Maps**: Google Maps Platform
 
-- `Next.js 16.1.6`
-- `React 19`
-- `TypeScript`
-- `Tailwind CSS v4`
-- `shadcn/ui`
-- `Zustand`
-- `IndexedDB (idb)`
-- `Framer Motion`
-- `Recharts`
-- `@vis.gl/react-google-maps`
-- `Three.js`
-- `html2canvas + jsPDF`
-
-#### Backend / Server
-
-- `Next.js Route Handlers`
-- `Zod`
-- `@google/genai`
-- `Jimp`
-- `DigitalOcean Spaces / S3-compatible uploads`
-- `MiniMax TTS`
-- `Google Maps Platform`
-
-#### Shared packages
-
-- `packages/contracts`
-  - shared types and schemas
-- `packages/ui`
-  - shared UI primitives
-
-### 3. Repository Layout
-
-```text
-Inspect/
-├─ apps/
-│  ├─ web/                  # frontend app
-│  └─ api/                  # backend/API app
-├─ packages/
-│  ├─ contracts/            # shared schemas and types
-│  └─ ui/                   # shared UI package
-├─ tests/                   # vitest and playwright
-├─ package.json             # root scripts
-└─ README.md
-```
-
-### 4. Main Routes
-
-- `/` home / intake shell
-- `/radar` pre-scan state page
-- `/scan` live camera scanning + 3D studio
-- `/manual` photo upload flow
-- `/report/[id]` report page
-- `/compare` comparison entry
-- `/compare/[id]` comparison report
-- `/history` local history
-
-### 5. Main API Routes
-
-- `GET /api/health`
-- `POST /api/upload/sign`
-- `POST /api/storage/object`
-- `POST /api/analyze`
-- `POST /api/analyze/live`
-- `POST /api/intelligence`
-- `POST /api/negotiate`
-- `POST /api/knowledge/query`
-- `POST /api/compare`
-- `POST /api/geocode/reverse`
-- `POST /api/checklist/prefill`
-- `POST /api/listing/discover`
-- `POST /api/listing/extract`
-- `POST /api/maps/static`
-- `POST /api/assets/sign-get`
-- `POST /api/tts/alert`
-- `POST /api/scan/3d/reconstruct`
-
-### 6. Requirements
-
-Recommended:
-
-- `Node.js >= 20`
-- `pnpm >= 9`
-
-Check versions:
-
-```bash
-node -v
-pnpm -v
-```
-
-### 7. Setup
-
-#### Install
+### Quick Start
 
 ```bash
 pnpm install
-```
-
-#### Create env file
-
-```bash
 cp .env.example .env.local
-```
-
-#### Run locally
-
-```bash
 pnpm dev
 ```
 
-Or run apps separately:
+Visit `http://localhost:3000`
 
-```bash
-pnpm dev:web
-pnpm dev:api
-```
+### Documentation
 
-Default local URLs:
-
-- Frontend: `http://localhost:3000`
-- API: `http://localhost:3001`
-
-#### Build
-
-```bash
-pnpm build
-```
-
-#### Start
-
-```bash
-pnpm start
-```
-
-### 8. Environment Variables
-
-Recommended minimum:
-
-```bash
-GEMINI_API_KEY=
-GOOGLE_MAPS_API_KEY=
-NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=
-MINIMAX_API_KEY=
-```
-
-Important notes:
-
-- Some flows can fall back locally when providers are unavailable
-- Full production-like behavior needs real provider keys
-- Spaces config is strongly recommended if you want upload persistence
-
-### 9. Product Usage
-
-#### 9.1 Live Inspection
-
-1. Open `/`
-2. Click `Enter Deep Scan`
-3. Fill in:
-   - property address
-   - agency
-   - optional weekly rent
-   - optional listing URL
-4. Click `Start Live Scan`
-5. Follow AI guidance in `/scan`
-6. End the scan and generate a report
-
-#### 9.2 Manual Upload
-
-1. Open `/manual` or click `Manual Override`
-2. Upload property images
-3. Let the app analyze them
-4. Review the generated report
-
-#### 9.3 3D Scan Studio
-
-1. Open `/scan`
-2. Click `Open 3D Scan Studio`
-3. Capture the guided room views
-4. Click `Generate 3D Demo`
-5. Review the approximate 3D room scene
-6. Adjust markers or promote suggested markers into the report
-
-Note:
-
-- This is an approximate semantic 3D room model
-- It is not a LiDAR or mesh-accurate reconstruction
-
-#### 9.4 Reports
-
-Reports include:
-
-- risk score
-- fit score
-- recommendation
-- hazard list
-- area intelligence
-- community feedback
-- agency background
-- evidence and confidence
-- inspection coverage
-- pre-lease action guide
-- knowledge guidance
-- paperwork checks
-- 3D room view
-- export actions
-
-#### 9.5 Compare
-
-1. Generate multiple reports
-2. Open `/compare`
-3. Select saved reports
-4. Adjust weights
-5. Generate a comparison report
-
-#### 9.6 History
-
-Use `/history` to:
-
-- reopen previous searches
-- revisit comparison runs
-- restore prior inputs
-
-### 10. Quality Commands
-
-Lint:
-
-```bash
-pnpm lint
-```
-
-Unit tests:
-
-```bash
-pnpm test:unit
-```
-
-E2E tests:
-
-```bash
-pnpm test:e2e
-```
-
-Full build:
-
-```bash
-pnpm build
-```
-
-### 11. Current Characteristics
-
-- Guided live scan instead of naive frame-by-frame recording
-- Shared report pipeline for live and manual modes
-- Refresh-safe report snapshots
-- 3D Room View marker support
-- Multi-property comparison
-- Knowledge-base-assisted renter guidance
-- Map + web fused intelligence
-
-### 12. Known Limitations
-
-- 3D reconstruction is approximate, not measurement-grade
-- Some provider-backed capabilities fall back when keys are missing
-- Public web evidence quality depends partly on search result quality
-- Report sharing is still primarily local-snapshot based
-
-### 13. Development Guidance
-
-- Add shared fields in `packages/contracts` first
-- Validate API inputs/outputs with Zod
-- Keep async status naming consistent:
-  - `idle`
-  - `loading`
-  - `success`
-  - `fallback`
-  - `error`
+See full documentation in [README.md](./README.md) (Chinese).
