@@ -96,7 +96,7 @@ export default function HomePage() {
     listingUrl: normalizedListingUrl,
     coordinates,
     checklist: inspectionChecklist,
-    enabled: true,
+    enabled: activeMode === "manual",
     onApply: (nextChecklist) => {
       setInspectionChecklist(nextChecklist);
       updateInspectionDraft({ inspectionChecklist: nextChecklist });
@@ -524,7 +524,9 @@ export default function HomePage() {
                   {activeMode === "live" ? "Configure Deep Scan" : "Prepare Manual Override"}
                 </div>
                 <p className="text-sm text-slate-400">
-                  Keep the cinematic shell, but continue using the full inspection intake below.
+                  {activeMode === "live"
+                    ? "Only capture the essentials here. RentRadar will guide the walkthrough and record room-level evidence during Live Scan."
+                    : "Keep the cinematic shell, but continue using the full inspection intake below."}
                 </p>
               </div>
               <Button
@@ -720,60 +722,84 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <div className="text-sm font-medium text-white/90">Inspection Notes & Entry Condition (Optional)</div>
-                <p className="text-xs text-slate-400">
-                  Capture the practical items that affect move-in risk, lease clarity, utilities, and daily livability.
-                </p>
-                {checklistPrefill.status !== "idle" ? (
-                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
-                        Remote checklist assist
+              {activeMode === "manual" ? (
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-white/90">Inspection Notes & Entry Condition (Optional)</div>
+                  <p className="text-xs text-slate-400">
+                    Capture the practical items that affect move-in risk, lease clarity, utilities, and daily livability.
+                  </p>
+                  {checklistPrefill.status !== "idle" ? (
+                    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+                          Remote checklist assist
+                        </div>
+                        <Badge
+                          variant={
+                            checklistPrefill.status === "success"
+                              ? "default"
+                              : checklistPrefill.status === "loading"
+                                ? "secondary"
+                                : checklistPrefill.status === "error"
+                                  ? "destructive"
+                                  : "outline"
+                          }
+                        >
+                          {checklistPrefill.status}
+                        </Badge>
                       </div>
-                      <Badge
-                        variant={
-                          checklistPrefill.status === "success"
-                            ? "default"
-                            : checklistPrefill.status === "loading"
-                              ? "secondary"
-                              : checklistPrefill.status === "error"
-                                ? "destructive"
-                                : "outline"
-                        }
-                      >
-                        {checklistPrefill.status}
-                      </Badge>
+                      <p className="mt-2 text-xs text-slate-400">
+                        {checklistPrefill.status === "loading"
+                          ? "Searching Google Maps and web sources to prefill the checklist..."
+                          : checklistPrefill.summary}
+                      </p>
+                      {checklistPrefill.status === "fallback" || checklistPrefill.status === "error" ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="mt-2 h-auto px-0 text-xs text-[#3DDCFF] hover:bg-transparent hover:text-white"
+                          onClick={checklistPrefill.retry}
+                        >
+                          Retry remote prefill
+                        </Button>
+                      ) : null}
                     </div>
-                    <p className="mt-2 text-xs text-slate-400">
-                      {checklistPrefill.status === "loading"
-                        ? "Searching Google Maps and web sources to prefill the checklist..."
-                        : checklistPrefill.summary}
-                    </p>
-                    {checklistPrefill.status === "fallback" || checklistPrefill.status === "error" ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="mt-2 h-auto px-0 text-xs text-[#3DDCFF] hover:bg-transparent hover:text-white"
-                        onClick={checklistPrefill.retry}
-                      >
-                        Retry remote prefill
-                      </Button>
-                    ) : null}
+                  ) : null}
+                  <InspectionChecklistEditor
+                    value={inspectionChecklist}
+                    onChange={(nextChecklist) => {
+                      setInspectionChecklist(nextChecklist);
+                      updateInspectionDraft({ inspectionChecklist: nextChecklist });
+                    }}
+                    onFieldEdit={checklistPrefill.markFieldAsManual}
+                    autoFilledFieldKeys={checklistPrefill.autoFilledFieldKeys}
+                    compact
+                  />
+                </div>
+              ) : (
+                <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                  <div className="text-sm font-medium text-white/90">AI-guided checklist capture</div>
+                  <p className="text-xs leading-relaxed text-slate-400">
+                    Live Scan will guide the walkthrough and collect condition notes while you move through the space.
+                    You do not need to fill the inspection checklist manually here.
+                  </p>
+                  <div className="grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
+                    <div className="rounded-xl border border-white/10 bg-[#090B12]/50 px-3 py-2">
+                      Access, doors, intercom, parcel areas
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-[#090B12]/50 px-3 py-2">
+                      Windows, seals, visible moisture, and wall edges
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-[#090B12]/50 px-3 py-2">
+                      Appliances, fixtures, storage, and room usability
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-[#090B12]/50 px-3 py-2">
+                      Guided issue confirmation with voice and on-screen prompts
+                    </div>
                   </div>
-                ) : null}
-                <InspectionChecklistEditor
-                  value={inspectionChecklist}
-                  onChange={(nextChecklist) => {
-                    setInspectionChecklist(nextChecklist);
-                    updateInspectionDraft({ inspectionChecklist: nextChecklist });
-                  }}
-                  onFieldEdit={checklistPrefill.markFieldAsManual}
-                  autoFilledFieldKeys={checklistPrefill.autoFilledFieldKeys}
-                  compact
-                />
-              </div>
+                </div>
+              )}
             </div>
 
             <div className="shrink-0 border-t border-white/10 px-5 py-4 sm:px-6">
