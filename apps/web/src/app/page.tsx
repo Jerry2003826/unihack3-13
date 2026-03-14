@@ -1,22 +1,41 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { saveSearchHistory } from "@/lib/history/historyStore";
-import { requestCurrentLocation, reverseGeocodeCoordinates } from "@/lib/location";
-import { toOptionalUrl } from "@/lib/url";
-import { useChecklistPrefill } from "@/hooks/useChecklistPrefill";
-import { useListingDiscovery } from "@/hooks/useListingDiscovery";
-import { useSessionStore } from "@/store/useSessionStore";
-import { useHazardStore } from "@/store/useHazardStore";
-import { InspectionChecklistEditor } from "@/components/inspection/InspectionChecklistEditor";
+import type { AsyncStatus, GeoPoint, InspectionChecklist } from "@inspect-ai/contracts";
+import {
+  Activity,
+  AlertTriangle,
+  ChevronRight,
+  Cpu,
+  History,
+  Scan,
+  ShieldCheck,
+  Upload,
+  X,
+} from "lucide-react";
 import { FallbackTrigger } from "@/components/shared/FallbackTrigger";
+import { InspectionChecklistEditor } from "@/components/inspection/InspectionChecklistEditor";
+import { MacroScanBackground } from "@/components/home/MacroScanBackground";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { useChecklistPrefill } from "@/hooks/useChecklistPrefill";
+import { useListingDiscovery } from "@/hooks/useListingDiscovery";
+import { saveSearchHistory } from "@/lib/history/historyStore";
+import { requestCurrentLocation, reverseGeocodeCoordinates } from "@/lib/location";
+import { toOptionalUrl } from "@/lib/url";
+import { useHazardStore } from "@/store/useHazardStore";
+import { useSessionStore } from "@/store/useSessionStore";
 import { toast } from "sonner";
-import type { AsyncStatus, GeoPoint, InspectionChecklist } from "@inspect-ai/contracts";
+
+const SHAPE_TYPES = [
+  { id: "SUBURBAN", name: "EXTERIOR: SUBURBAN RESIDENCE" },
+  { id: "TOWER", name: "EXTERIOR: HIGH-RISE APARTMENT" },
+  { id: "INTERIOR", name: "INTERIOR: LIVING ROOM TOPOLOGY" },
+];
+
+type IntakeMode = "live" | "manual" | null;
 
 export default function HomePage() {
   const router = useRouter();
@@ -30,9 +49,12 @@ export default function HomePage() {
     beginInspection,
     prepareManualMode,
     updateInspectionDraft,
-  } =
-    useSessionStore();
+  } = useSessionStore();
   const { resetForNewInspection } = useHazardStore();
+
+  const [hazardCount, setHazardCount] = useState(0);
+  const [systemState, setSystemState] = useState("SUBURBAN");
+  const [activeMode, setActiveMode] = useState<IntakeMode>(null);
 
   const [address, setAddress] = useState(draftAddress);
   const [agency, setAgency] = useState(draftAgency);
@@ -43,7 +65,17 @@ export default function HomePage() {
   const [locationStatus, setLocationStatus] = useState<AsyncStatus>("idle");
   const [isManualAddressOpen, setIsManualAddressOpen] = useState(false);
   const [isListingUrlManual, setIsListingUrlManual] = useState(Boolean(draftListingUrl.trim()));
+
   const normalizedListingUrl = toOptionalUrl(listingUrl);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setHazardCount((current) => (current > 25 ? 0 : current + Math.floor(Math.random() * 4)));
+    }, 800);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
   const listingDiscovery = useListingDiscovery({
     address,
     agency,
@@ -56,6 +88,7 @@ export default function HomePage() {
       setIsListingUrlManual(false);
     },
   });
+
   const checklistPrefill = useChecklistPrefill({
     address,
     agency,
@@ -78,6 +111,40 @@ export default function HomePage() {
         : locationStatus === "error"
           ? { label: "Error", variant: "destructive" as const }
           : null;
+
+  const isBreaching = systemState === "BREACHING";
+  const isInterior = systemState === "INTERIOR";
+  const isExiting = systemState === "EXITING";
+  const isWarning = isBreaching || isExiting;
+
+  const getStatusText = () => {
+    if (isBreaching) return "CRITICAL OVERRIDE: BREACHING EXTERIOR...";
+    if (isInterior) return "INTERIOR TOPOLOGY: LIVING ROOM SECURED";
+    if (isExiting) return "RE-ESTABLISHING MACRO VIEW...";
+    return SHAPE_TYPES.find((shape) => shape.id === systemState)?.name || "EXTERNAL MACRO SCAN";
+  };
+
+  const handleUseCurrentLocation = async () => {
+    setLocationStatus("loading");
+    try {
+      const nextCoordinates = await requestCurrentLocation();
+      const geocoded = await reverseGeocodeCoordinates(nextCoordinates);
+      setCoordinates(nextCoordinates);
+      setAddress(geocoded.formattedAddress);
+      if (!isListingUrlManual && listingUrl) {
+        setListingUrl("");
+        updateInspectionDraft({ listingUrl: "" });
+        listingDiscovery.retry();
+      }
+      setIsManualAddressOpen(false);
+      setLocationStatus(geocoded.provider === "fallback" ? "fallback" : "success");
+      toast.success("Address filled from current location.");
+    } catch (error) {
+      setIsManualAddressOpen(true);
+      setLocationStatus("error");
+      toast.error(error instanceof Error ? error.message : "Failed to resolve current location.");
+    }
+  };
 
   const handleStartLiveScan = async () => {
     if (!address.trim()) {
@@ -129,300 +196,474 @@ export default function HomePage() {
     router.push("/manual");
   };
 
-  const handleUseCurrentLocation = async () => {
-    setLocationStatus("loading");
-    try {
-      const nextCoordinates = await requestCurrentLocation();
-      const geocoded = await reverseGeocodeCoordinates(nextCoordinates);
-      setCoordinates(nextCoordinates);
-      setAddress(geocoded.formattedAddress);
-      if (!isListingUrlManual && listingUrl) {
-        setListingUrl("");
-        updateInspectionDraft({ listingUrl: "" });
-        listingDiscovery.retry();
-      }
-      setIsManualAddressOpen(false);
-      setLocationStatus(geocoded.provider === "fallback" ? "fallback" : "success");
-      toast.success("Address filled from current location.");
-    } catch (error) {
-      setIsManualAddressOpen(true);
-      setLocationStatus("error");
-      toast.error(error instanceof Error ? error.message : "Failed to resolve current location.");
-    }
-  };
-
   return (
-    <div className="min-h-[100dvh] bg-background text-foreground flex flex-col items-center justify-center p-4">
-      <FallbackTrigger />
+    <div className="relative min-h-[100dvh] overflow-hidden bg-[#090B12] text-[#E7ECF3] selection:bg-[#3DDCFF] selection:text-[#090B12]">
+      <style jsx global>{`
+        @keyframes scan-line {
+          0% {
+            transform: translateY(-100%);
+          }
+          100% {
+            transform: translateY(400%);
+          }
+        }
 
-      <div className="w-full max-w-md space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <div className="text-center space-y-3">
-          <h1 className="text-4xl font-bold tracking-tight text-accent">Inspect.AI</h1>
-          <p className="text-muted-foreground">Rental property risk scanner & decision assistant</p>
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => router.push("/compare")}>
-              Saved Reports / Compare
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => router.push("/history")}>
-              Search History
-            </Button>
+        @keyframes float-up {
+          from {
+            opacity: 0;
+            transform: translateY(30px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .inspect-animate-scan {
+          animation: scan-line 2s linear infinite;
+        }
+
+        .inspect-animate-fade-up {
+          animation: float-up 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        .inspect-crt-overlay {
+          background:
+            linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+            linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+          background-size: 100% 4px, 6px 100%;
+          pointer-events: none;
+        }
+      `}</style>
+
+      <FallbackTrigger />
+      <MacroScanBackground onStateChange={setSystemState} />
+      <div className="inspect-crt-overlay absolute inset-0 z-[5]" />
+      <div className="pointer-events-none absolute inset-0 z-10 bg-[radial-gradient(circle_at_center,transparent_10%,#090B12_100%)] opacity-95">
+        <div className="absolute inset-y-0 left-0 w-full lg:w-1/2 bg-gradient-to-r from-[#090B12]/95 via-[#090B12]/50 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#090B12]/95 to-transparent" />
+      </div>
+
+      <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
+        <div className="absolute right-4 top-6 flex gap-2 sm:right-8 sm:top-8 lg:right-12 lg:top-10">
+          <Button
+            variant="outline"
+            size="sm"
+            className="pointer-events-auto border-white/15 bg-[#090B12]/60 text-white hover:bg-white/10"
+            onClick={() => router.push("/compare")}
+          >
+            Compare
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="pointer-events-auto border-white/15 bg-[#090B12]/60 text-white hover:bg-white/10"
+            onClick={() => router.push("/history")}
+          >
+            <History className="mr-2 size-4" />
+            History
+          </Button>
+        </div>
+
+        <div
+          className="inspect-animate-fade-up absolute left-6 top-8 max-w-xl space-y-6 sm:left-10 sm:top-12 lg:left-16 lg:top-16"
+        >
+          <div
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(0,0,0,0.5)] backdrop-blur-md transition-all duration-500 ${
+              isWarning
+                ? "border-[#FF2A3F]/80 bg-[#FF2A3F]/20 text-[#FF2A3F]"
+                : isInterior
+                  ? "border-[#29D391]/80 bg-[#29D391]/10 text-[#29D391]"
+                  : "border-[#3DDCFF]/40 bg-[#090B12]/60 text-[#3DDCFF]"
+            }`}
+          >
+            {isWarning ? (
+              <AlertTriangle className="size-4 animate-pulse" />
+            ) : isInterior ? (
+              <ShieldCheck className="size-4" />
+            ) : (
+              <Activity className="size-4 animate-pulse" />
+            )}
+            <span>{isWarning ? "BREACH PROTOCOL INIT" : isInterior ? "MICRO-SCALE MAPPING" : "MACRO-SCALE MAPPING"}</span>
+          </div>
+
+          <h1
+            className="text-5xl font-black tracking-tighter text-white drop-shadow-2xl sm:text-7xl lg:text-8xl"
+            style={{ fontFamily: "var(--font-space-grotesk), sans-serif" }}
+          >
+            Inspect
+            <br />
+            <span className="bg-gradient-to-r from-[#3DDCFF] to-[#29D391] bg-clip-text text-transparent">.AI</span>
+          </h1>
+
+          <p className="max-w-lg text-base font-light leading-relaxed text-gray-300 drop-shadow-md md:text-xl">
+            全栈级智能租房风控终端。结合视觉检测引擎与空间数据检索，
+            <span className="font-medium text-white"> 无缝穿透建筑表象，直达室内微观隐患节点。</span>
+          </p>
+
+          <div className="flex flex-col gap-4 pt-4 sm:flex-row">
+            <button
+              type="button"
+              onClick={() => setActiveMode("live")}
+              className="pointer-events-auto group relative flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-[#3DDCFF] px-6 py-4 font-bold text-[#090B12] shadow-[0_0_30px_rgba(0,0,0,0.4)] transition-all duration-700 hover:scale-[1.02] active:scale-95"
+            >
+              <span className="absolute inset-0 translate-y-full bg-white/30 transition-transform duration-300 group-hover:translate-y-0" />
+              <Scan className="relative z-10 size-5" />
+              <span className="relative z-10 tracking-wide">Enter Deep Scan</span>
+              <ChevronRight className="relative z-10 size-4 transition-transform group-hover:translate-x-1" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveMode("manual")}
+              className="pointer-events-auto group flex items-center justify-center gap-2 rounded-xl border border-white/20 px-6 py-4 font-semibold text-white backdrop-blur-md transition-all hover:bg-white/10"
+            >
+              <Upload className="size-5 text-gray-400 transition-colors group-hover:text-white" />
+              <span>Manual Override</span>
+            </button>
           </div>
         </div>
 
-        <Card className="border-accent/20 shadow-lg shadow-accent/5">
-          <CardHeader>
-            <CardTitle>Live Inspection</CardTitle>
-            <CardDescription>Scan a property in real-time during an inspection</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-medium text-foreground/90">Property Address</span>
-                {locationBadge ? <Badge variant={locationBadge.variant}>{locationBadge.label}</Badge> : null}
+        <div
+          className="inspect-animate-fade-up absolute bottom-20 right-4 z-50 w-64 sm:bottom-24 sm:right-8 sm:w-72 md:w-80 lg:bottom-24 lg:right-12"
+          style={{ animationDelay: "200ms" }}
+        >
+          <div className="relative w-full overflow-hidden rounded-3xl border border-[#3DDCFF]/20 bg-[#090B12]/80 shadow-[0_15px_40px_rgba(0,0,0,0.8)] backdrop-blur-xl transition-all duration-500 hover:scale-[1.02]">
+            <div className="pointer-events-none absolute inset-0">
+              <div className="inspect-animate-scan h-0.5 w-full bg-[#3DDCFF] opacity-50 shadow-[0_0_15px_currentColor]" />
+            </div>
+
+            <div className="flex flex-col gap-4 p-5 sm:p-6">
+              <div className="flex items-start justify-between border-b border-[#3DDCFF]/20 pb-3">
+                <div className="space-y-1">
+                  <div className="text-[10px] font-mono uppercase tracking-widest text-[#3DDCFF]">TARGET LOCK</div>
+                  <div key={getStatusText()} className="inspect-animate-fade-up font-mono text-sm font-semibold tracking-wider text-white">
+                    {getStatusText()}
+                  </div>
+                </div>
+                <Cpu className="size-5 animate-spin text-[#3DDCFF]" style={{ animationDuration: "4s" }} />
               </div>
-              <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
-                <div className="space-y-3">
-                  <Button
-                    className="w-full"
-                    onClick={handleUseCurrentLocation}
-                    type="button"
-                    disabled={locationStatus === "loading"}
-                  >
-                    {locationStatus === "loading"
-                      ? "Locating..."
-                      : hasAddress
-                        ? "Refresh Current Location"
-                        : "Use Current Location"}
-                  </Button>
-                  {hasAddress ? (
-                    <div className="rounded-xl border border-border/60 bg-background/80 p-3">
-                      <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                        {locationStatus === "success" || locationStatus === "fallback" ? "Resolved Address" : "Saved Address"}
-                      </p>
-                      <p className="mt-2 text-sm font-medium text-foreground">{address}</p>
-                      {coordinates ? (
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          {coordinates.lat.toFixed(4)}, {coordinates.lng.toFixed(4)}
+
+              <div className="mt-2 grid grid-cols-2 gap-3">
+                <div
+                  className={`rounded-xl border p-3 transition-all duration-500 ${
+                    hazardCount > 0 ? "border-[#FF2A3F]/40 bg-[#FF2A3F]/15" : "border-[#3DDCFF]/10 bg-[#3DDCFF]/5"
+                  }`}
+                >
+                  <div className={`mb-1 text-[10px] font-mono uppercase tracking-wider ${hazardCount > 0 ? "text-[#FF2A3F]" : "text-[#3DDCFF]"}`}>
+                    Detected Hazards
+                  </div>
+                  <div className={`flex items-center gap-2 font-mono text-2xl font-bold ${hazardCount > 0 ? "text-[#FF2A3F]" : "text-[#3DDCFF]"}`}>
+                    {hazardCount.toString().padStart(2, "0")}
+                    {hazardCount > 0 ? <span className="size-2 rounded-full bg-[#FF2A3F] animate-ping" /> : null}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-[#3DDCFF]/20 bg-[#3DDCFF]/10 p-3">
+                  <div className="mb-1 text-[10px] font-mono uppercase tracking-wider text-[#3DDCFF]">Data Integrity</div>
+                  <div className="font-mono text-2xl font-bold text-[#3DDCFF]">{Math.max(0, 100 - hazardCount)}%</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="absolute -right-4 top-0 flex items-center gap-1.5 rounded border border-[#3DDCFF]/40 bg-[#3DDCFF]/15 px-3 py-1.5 text-[10px] font-mono text-[#3DDCFF] shadow-[0_0_15px_rgba(0,0,0,0.5)] backdrop-blur-md">
+            <div className="size-1.5 animate-pulse rounded-full bg-[#3DDCFF]" />
+            {isInterior ? "MICRO-SCAN" : "MACRO-SCAN"}
+          </div>
+        </div>
+
+        <div
+          className="inspect-animate-fade-up absolute bottom-6 left-6 text-[10px] font-mono uppercase tracking-widest text-gray-500 sm:bottom-10 sm:left-10 lg:bottom-12 lg:left-16"
+          style={{ animationDelay: "400ms" }}
+        >
+          LATENCY: 12MS // PROTOCOL: {isInterior ? "INDOOR_MAPPING" : "EXTERIOR_SYNC"}
+        </div>
+      </div>
+
+      {activeMode ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center p-3 sm:p-4 lg:justify-start lg:px-16 lg:pb-8">
+          <div className="pointer-events-auto w-full max-w-3xl overflow-hidden rounded-[28px] border border-white/10 bg-[#0b1220]/92 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4 sm:px-6">
+              <div className="space-y-1">
+                <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-[#3DDCFF]">
+                  {activeMode === "live" ? "LIVE INTAKE" : "MANUAL INTAKE"}
+                </div>
+                <div className="text-xl font-semibold text-white">
+                  {activeMode === "live" ? "Configure Deep Scan" : "Prepare Manual Override"}
+                </div>
+                <p className="text-sm text-slate-400">
+                  Keep the cinematic shell, but continue using the full inspection intake below.
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0 text-slate-300 hover:bg-white/10 hover:text-white"
+                onClick={() => setActiveMode(null)}
+              >
+                <X className="size-5" />
+              </Button>
+            </div>
+
+            <div className="max-h-[68vh] space-y-5 overflow-y-auto px-5 py-5 sm:px-6">
+              <div className="grid gap-4 md:grid-cols-[1.15fr_0.85fr]">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-medium text-white/90">Property Address</span>
+                    {locationBadge ? <Badge variant={locationBadge.variant}>{locationBadge.label}</Badge> : null}
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                    <div className="space-y-3">
+                      <Button
+                        className="w-full bg-[#3DDCFF] text-[#090B12] hover:bg-[#3DDCFF]/90"
+                        onClick={handleUseCurrentLocation}
+                        type="button"
+                        disabled={locationStatus === "loading"}
+                      >
+                        {locationStatus === "loading"
+                          ? "Locating..."
+                          : hasAddress
+                            ? "Refresh Current Location"
+                            : "Use Current Location"}
+                      </Button>
+                      {hasAddress ? (
+                        <div className="rounded-xl border border-white/10 bg-[#090B12]/70 p-3">
+                          <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+                            {locationStatus === "success" || locationStatus === "fallback" ? "Resolved Address" : "Saved Address"}
+                          </p>
+                          <p className="mt-2 text-sm font-medium text-white">{address}</p>
+                          {coordinates ? (
+                            <p className="mt-2 text-xs text-slate-400">
+                              {coordinates.lat.toFixed(4)}, {coordinates.lng.toFixed(4)}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-400">
+                          Tap once to use your current location and auto-fill the property address.
+                        </p>
+                      )}
+                      {locationStatus === "error" ? (
+                        <p className="text-xs text-[#FF7A85]">
+                          We could not access your current location. Enter the address manually below.
                         </p>
                       ) : null}
+                      <div className="space-y-3">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setIsManualAddressOpen((open) => !open)}
+                          type="button"
+                          className="h-auto justify-start px-0 text-sm text-[#3DDCFF] hover:bg-transparent hover:text-white"
+                        >
+                          {isManualAddressOpen
+                            ? "Hide manual address entry"
+                            : hasAddress
+                              ? "Edit address manually"
+                              : "Enter address manually"}
+                        </Button>
+                        {isManualAddressOpen ? (
+                          <Input
+                            id="address"
+                            aria-label="Property Address"
+                            placeholder="e.g. 15 Dandenong Rd, Clayton"
+                            value={address}
+                            onChange={(event) => {
+                              setAddress(event.target.value);
+                              if (!isListingUrlManual && listingUrl) {
+                                setListingUrl("");
+                                updateInspectionDraft({ listingUrl: "" });
+                                listingDiscovery.retry();
+                              }
+                              if (locationStatus !== "loading") {
+                                setLocationStatus("idle");
+                              }
+                            }}
+                            className="border-white/10 bg-white/[0.04] text-white placeholder:text-slate-500 focus-visible:ring-[#3DDCFF]"
+                          />
+                        ) : null}
+                      </div>
                     </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Tap once to use your current location and auto-fill the property address.
-                    </p>
-                  )}
-                  {locationStatus === "error" ? (
-                    <p className="text-xs text-destructive">
-                      We could not access your current location. Enter the address manually below.
-                    </p>
-                  ) : null}
-                  <div className="space-y-3">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setIsManualAddressOpen((open) => !open)}
-                      type="button"
-                      className="h-auto justify-start px-0 text-sm"
-                    >
-                      {isManualAddressOpen
-                        ? "Hide manual address entry"
-                        : hasAddress
-                          ? "Edit address manually"
-                          : "Enter address manually"}
-                    </Button>
-                    {isManualAddressOpen ? (
-                      <Input
-                        id="address"
-                        aria-label="Property Address"
-                        placeholder="e.g. 15 Dandenong Rd, Clayton"
-                        value={address}
-                        onChange={(e) => {
-                          setAddress(e.target.value);
-                          if (!isListingUrlManual && listingUrl) {
-                            setListingUrl("");
-                            updateInspectionDraft({ listingUrl: "" });
-                            listingDiscovery.retry();
-                          }
-                          if (locationStatus !== "loading") {
-                            setLocationStatus("idle");
-                          }
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label htmlFor="agency" className="text-sm font-medium text-white/90">
+                      Real Estate Agency
+                    </label>
+                    <Input
+                      id="agency"
+                      placeholder="e.g. Ray White Clayton"
+                      value={agency}
+                      onChange={(event) => setAgency(event.target.value)}
+                      className="border-white/10 bg-white/[0.04] text-white placeholder:text-slate-500 focus-visible:ring-[#3DDCFF]"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="asking-rent" className="text-sm font-medium text-white/90">
+                      Weekly Rent (Optional)
+                    </label>
+                    <Input
+                      id="asking-rent"
+                      inputMode="numeric"
+                      placeholder="e.g. 620"
+                      value={askingRent}
+                      onChange={(event) => setAskingRent(event.target.value.replace(/[^\d]/g, ""))}
+                      className="border-white/10 bg-white/[0.04] text-white placeholder:text-slate-500 focus-visible:ring-[#3DDCFF]"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="listing-url" className="text-sm font-medium text-white/90">
+                      Property Listing Link (Optional)
+                    </label>
+                    <Input
+                      id="listing-url"
+                      placeholder="Paste the Realestate, Domain, or agent listing page URL"
+                      value={listingUrl}
+                      onChange={(event) => {
+                        const nextValue = event.target.value;
+                        setListingUrl(nextValue);
+                        setIsListingUrlManual(nextValue.trim().length > 0);
+                        updateInspectionDraft({ listingUrl: nextValue });
+                      }}
+                      className="border-white/10 bg-white/[0.04] text-white placeholder:text-slate-500 focus-visible:ring-[#3DDCFF]"
+                    />
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+                      <span>Leave this blank and we&apos;ll try to infer a listing page from the address.</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto px-0 text-xs text-[#3DDCFF] hover:bg-transparent hover:text-white"
+                        onClick={() => {
+                          setListingUrl("");
+                          setIsListingUrlManual(false);
+                          updateInspectionDraft({ listingUrl: "" });
+                          listingDiscovery.retry();
                         }}
-                        className="bg-background focus-visible:ring-accent"
-                      />
+                      >
+                        Auto-detect from address
+                      </Button>
+                    </div>
+                    {listingDiscovery.status !== "idle" || normalizedListingUrl ? (
+                      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+                            Listing discovery
+                          </div>
+                          <Badge
+                            variant={
+                              listingDiscovery.status === "success"
+                                ? "default"
+                                : listingDiscovery.status === "loading"
+                                  ? "secondary"
+                                  : listingDiscovery.status === "error"
+                                    ? "destructive"
+                                    : "outline"
+                            }
+                          >
+                            {normalizedListingUrl ? "linked" : listingDiscovery.status}
+                          </Badge>
+                        </div>
+                        <p className="mt-2 text-xs text-slate-400">
+                          {listingDiscovery.status === "loading"
+                            ? "Searching for likely rental listing pages that match this address..."
+                            : listingDiscovery.summary || "You can paste the exact listing page URL if you already have it."}
+                        </p>
+                        {normalizedListingUrl ? (
+                          <a
+                            href={normalizedListingUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-2 block break-all text-xs text-[#3DDCFF] underline-offset-4 hover:underline"
+                          >
+                            {normalizedListingUrl}
+                          </a>
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
                 </div>
               </div>
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="agency" className="text-sm font-medium text-foreground/90">Real Estate Agency</label>
-              <Input
-                id="agency"
-                placeholder="e.g. Ray White Clayton"
-                value={agency}
-                onChange={(e) => setAgency(e.target.value)}
-                className="bg-muted/50 focus-visible:ring-accent"
-              />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="asking-rent" className="text-sm font-medium text-foreground/90">Weekly Rent (Optional)</label>
-              <Input
-                id="asking-rent"
-                inputMode="numeric"
-                placeholder="e.g. 620"
-                value={askingRent}
-                onChange={(e) => setAskingRent(e.target.value.replace(/[^\d]/g, ""))}
-                className="bg-muted/50 focus-visible:ring-accent"
-              />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="listing-url" className="text-sm font-medium text-foreground/90">Property Listing Link (Optional)</label>
-              <Input
-                id="listing-url"
-                placeholder="Paste the Realestate, Domain, or agent listing page URL"
-                value={listingUrl}
-                onChange={(e) => {
-                  const nextValue = e.target.value;
-                  setListingUrl(nextValue);
-                  setIsListingUrlManual(nextValue.trim().length > 0);
-                  updateInspectionDraft({ listingUrl: nextValue });
-                }}
-                className="bg-muted/50 focus-visible:ring-accent"
-              />
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                <span>
-                  Leave this blank and we&apos;ll try to infer a listing page from the address.
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-auto px-0 text-xs"
-                  onClick={() => {
-                    setListingUrl("");
-                    setIsListingUrlManual(false);
-                    updateInspectionDraft({ listingUrl: "" });
-                    listingDiscovery.retry();
+
+              <div className="space-y-2">
+                <div className="text-sm font-medium text-white/90">Inspection Notes & Entry Condition (Optional)</div>
+                <p className="text-xs text-slate-400">
+                  Capture the practical items that affect move-in risk, lease clarity, utilities, and daily livability.
+                </p>
+                {checklistPrefill.status !== "idle" ? (
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+                        Remote checklist assist
+                      </div>
+                      <Badge
+                        variant={
+                          checklistPrefill.status === "success"
+                            ? "default"
+                            : checklistPrefill.status === "loading"
+                              ? "secondary"
+                              : checklistPrefill.status === "error"
+                                ? "destructive"
+                                : "outline"
+                        }
+                      >
+                        {checklistPrefill.status}
+                      </Badge>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-400">
+                      {checklistPrefill.status === "loading"
+                        ? "Searching Google Maps and web sources to prefill the checklist..."
+                        : checklistPrefill.summary}
+                    </p>
+                    {checklistPrefill.status === "fallback" || checklistPrefill.status === "error" ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="mt-2 h-auto px-0 text-xs text-[#3DDCFF] hover:bg-transparent hover:text-white"
+                        onClick={checklistPrefill.retry}
+                      >
+                        Retry remote prefill
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
+                <InspectionChecklistEditor
+                  value={inspectionChecklist}
+                  onChange={(nextChecklist) => {
+                    setInspectionChecklist(nextChecklist);
+                    updateInspectionDraft({ inspectionChecklist: nextChecklist });
                   }}
+                  onFieldEdit={checklistPrefill.markFieldAsManual}
+                  autoFilledFieldKeys={checklistPrefill.autoFilledFieldKeys}
+                  compact
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-white/10 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+              <div className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                {activeMode === "live" ? "Ready for guided radar scan" : "Ready for manual photo upload"}
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button
+                  variant={activeMode === "manual" ? "outline" : "secondary"}
+                  className="border-white/15 bg-white/5 text-white hover:bg-white/10"
+                  onClick={handleManualUpload}
                 >
-                  Auto-detect from address
+                  <Upload className="mr-2 size-4" />
+                  Continue to Manual Upload
+                </Button>
+                <Button className="bg-[#3DDCFF] text-[#090B12] hover:bg-[#3DDCFF]/90" onClick={() => void handleStartLiveScan()}>
+                  <Scan className="mr-2 size-4" />
+                  Start Live Scan
                 </Button>
               </div>
-              {listingDiscovery.status !== "idle" || normalizedListingUrl ? (
-                <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                      Listing discovery
-                    </div>
-                    <Badge
-                      variant={
-                        listingDiscovery.status === "success"
-                          ? "default"
-                          : listingDiscovery.status === "loading"
-                            ? "secondary"
-                            : listingDiscovery.status === "error"
-                              ? "destructive"
-                              : "outline"
-                      }
-                    >
-                      {normalizedListingUrl ? "linked" : listingDiscovery.status}
-                    </Badge>
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {listingDiscovery.status === "loading"
-                      ? "Searching for likely rental listing pages that match this address..."
-                      : listingDiscovery.summary || "You can paste the exact listing page URL if you already have it."}
-                  </p>
-                  {normalizedListingUrl ? (
-                    <a
-                      href={normalizedListingUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-2 block break-all text-xs text-accent underline-offset-4 hover:underline"
-                    >
-                      {normalizedListingUrl}
-                    </a>
-                  ) : null}
-                </div>
-              ) : null}
             </div>
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-foreground/90">Inspection Notes & Entry Condition (Optional)</div>
-              <p className="text-xs text-muted-foreground">
-                Capture the practical items that affect move-in risk, lease clarity, utilities, and daily livability.
-              </p>
-              {checklistPrefill.status !== "idle" ? (
-                <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                      Remote checklist assist
-                    </div>
-                    <Badge
-                      variant={
-                        checklistPrefill.status === "success"
-                          ? "default"
-                          : checklistPrefill.status === "loading"
-                            ? "secondary"
-                            : checklistPrefill.status === "error"
-                              ? "destructive"
-                              : "outline"
-                      }
-                    >
-                      {checklistPrefill.status}
-                    </Badge>
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {checklistPrefill.status === "loading"
-                      ? "Searching Google Maps and web sources to prefill the checklist..."
-                      : checklistPrefill.summary}
-                  </p>
-                  {checklistPrefill.status === "fallback" || checklistPrefill.status === "error" ? (
-                    <Button type="button" variant="ghost" size="sm" className="mt-2 h-auto px-0 text-xs" onClick={checklistPrefill.retry}>
-                      Retry remote prefill
-                    </Button>
-                  ) : null}
-                </div>
-              ) : null}
-              <InspectionChecklistEditor
-                value={inspectionChecklist}
-                onChange={(nextChecklist) => {
-                  setInspectionChecklist(nextChecklist);
-                  updateInspectionDraft({ inspectionChecklist: nextChecklist });
-                }}
-                onFieldEdit={checklistPrefill.markFieldAsManual}
-                autoFilledFieldKeys={checklistPrefill.autoFilledFieldKeys}
-                compact
-              />
-            </div>
-          </CardContent>
-          <CardFooter>
-            <Button className="w-full bg-accent text-accent-foreground hover:bg-accent/90" size="lg" onClick={handleStartLiveScan}>
-              Start Scan
-            </Button>
-          </CardFooter>
-        </Card>
-
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t border-border" />
-          </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-background px-2 text-muted-foreground">Or</span>
           </div>
         </div>
-
-        <Card className="border-border/50 bg-card/50 backdrop-blur border-dashed">
-          <CardHeader>
-            <CardTitle>Manual Upload</CardTitle>
-            <CardDescription>Upload photos of a property to get an instant report</CardDescription>
-          </CardHeader>
-          <CardFooter>
-            <Button variant="outline" className="w-full border-muted-foreground/30 hover:bg-muted" size="lg" onClick={handleManualUpload}>
-              Upload Photos
-            </Button>
-          </CardFooter>
-        </Card>
-      </div>
+      ) : null}
     </div>
   );
 }

@@ -35,6 +35,15 @@ describe("liveGuidance", () => {
     expect(next?.id).toBe("wardrobe-base");
   });
 
+  it("skips the current target when asked to advance without marking it complete", () => {
+    const next = getNextGuidanceTarget({
+      roomType: "hallway",
+      skipTargetId: "entry-safety",
+    });
+
+    expect(next?.id).toBe("parcel-mailbox");
+  });
+
   it("reports room guidance progress from completed ids", () => {
     expect(
       getGuidanceProgress({

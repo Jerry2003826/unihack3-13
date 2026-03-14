@@ -8,6 +8,7 @@ import type {
   InspectionChecklist,
   PreferenceProfile,
   PropertyIntelligence,
+  RoomScene3D,
 } from "@inspect-ai/contracts";
 
 interface BeginInspectionArgs {
@@ -45,6 +46,7 @@ interface SessionState {
   isDemoMode: boolean;
   intelligence: PropertyIntelligence | null;
   manualSubmissionContext: ManualSubmissionContext | null;
+  roomScenes3d: RoomScene3D[];
 
   // Actions
   beginInspection: (args: BeginInspectionArgs) => void;
@@ -55,6 +57,7 @@ interface SessionState {
   setReportId: (reportId: string | null) => void;
   resetInspectionArtifacts: () => void;
   setManualSubmissionContext: (context: ManualSubmissionContext | null) => void;
+  upsertRoomScene3D: (scene: RoomScene3D) => void;
 }
 
 export const useSessionStore = create<SessionState>()(
@@ -75,6 +78,7 @@ export const useSessionStore = create<SessionState>()(
       isDemoMode: false,
       intelligence: null,
       manualSubmissionContext: null,
+      roomScenes3d: [],
 
       beginInspection: (args) =>
         set((state) => ({
@@ -93,6 +97,7 @@ export const useSessionStore = create<SessionState>()(
           reportId: null,
           intelligence: null,
           manualSubmissionContext: null,
+          roomScenes3d: [],
         })),
 
       updateInspectionDraft: (args) =>
@@ -129,11 +134,20 @@ export const useSessionStore = create<SessionState>()(
 
       setManualSubmissionContext: (context) => set({ manualSubmissionContext: context }),
 
+      upsertRoomScene3D: (scene) =>
+        set((state) => ({
+          roomScenes3d: [
+            ...state.roomScenes3d.filter((existing) => existing.roomType !== scene.roomType),
+            scene,
+          ],
+        })),
+
       resetInspectionArtifacts: () =>
         set({
           reportId: null,
           intelligence: null,
           manualSubmissionContext: null,
+          roomScenes3d: [],
         }),
     }),
     {
@@ -154,6 +168,7 @@ export const useSessionStore = create<SessionState>()(
         askingRent: state.askingRent,
         reportId: state.reportId,
         isDemoMode: publicAppConfig.demoModeEnabled ? state.isDemoMode : false,
+        roomScenes3d: state.roomScenes3d,
       }),
     }
   )

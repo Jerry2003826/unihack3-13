@@ -12,6 +12,7 @@ import { saveReportSnapshot } from "@/lib/report-snapshot/reportSnapshotStore";
 import { normalizeReportSnapshot } from "@/lib/report/normalizeReportSnapshot";
 import { calculatePropertyRiskScore } from "@/lib/scoring";
 import { BoundingBoxOverlay } from "@/components/scanner/BoundingBoxOverlay";
+import { RoomScene3DDialog } from "@/components/scanner/RoomScene3DDialog";
 import { Button } from "@/components/ui/button";
 import { FallbackTrigger } from "@/components/shared/FallbackTrigger";
 import type { RoomType, ReportSnapshot } from "@inspect-ai/contracts";
@@ -27,15 +28,24 @@ export default function ScanPage() {
   const router = useRouter();
   const sessionStore = useSessionStore();
   const hazardStore = useHazardStore();
-  const { address, isDemoMode, setReportId, setIsDemoMode } = sessionStore;
-  const { scanPhase, hazards, liveEvidenceFrames, setScanPhase, isAnalyzing } = hazardStore;
+  const { address, isDemoMode, roomScenes3d, setReportId, setIsDemoMode, upsertRoomScene3D } = sessionStore;
+  const { scanPhase, hazards, liveEvidenceFrames, setScanPhase, isAnalyzing, addHazard, setLiveEvidenceFrame } = hazardStore;
 
   const [roomType, setRoomType] = useState<RoomType>("unknown");
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [is3DStudioOpen, setIs3DStudioOpen] = useState(false);
   const { videoRef, canvasRef, startCamera, stopCamera, captureFrame, getCameraError, clearCameraError } =
     useCameraStream();
 
-  const { banner, guidanceTarget } = useVisionEngine({ captureFrame, roomType });
+  const {
+    banner,
+    guidanceTarget,
+    activeIssueObservation,
+    markCurrentGuidanceChecked,
+    skipCurrentGuidance,
+    dismissCurrentIssue,
+    recordCurrentIssueNow,
+  } = useVisionEngine({ captureFrame, roomType });
   const { primeSpeechSynthesis, cancelAlerts } = useVoiceAlert();
 
   useEffect(() => {
@@ -115,6 +125,7 @@ export default function ScanPage() {
           inspectionMode: "live",
         }),
         askingRent: sessionStore.askingRent || undefined,
+        roomScenes3d: sessionStore.roomScenes3d.length > 0 ? sessionStore.roomScenes3d : undefined,
         exportAssets:
           Object.keys(liveEvidenceFrames).length > 0
             ? {
@@ -158,6 +169,18 @@ export default function ScanPage() {
     toast.info("Demo Mode enabled. Tap Start Scan to continue.");
   };
 
+  const handle3DStudioOpenChange = (nextOpen: boolean) => {
+    if (nextOpen && scanPhase === "scanning") {
+      setScanPhase("stopped");
+      cancelAlerts();
+      toast.info("Live guidance paused while 3D Scan Studio is open.");
+    }
+
+    setIs3DStudioOpen(nextOpen);
+  };
+
+  const currentRoomScene = roomScenes3d.find((scene) => scene.roomType === roomType) ?? null;
+
   return (
     <div className="relative w-full h-[100dvh] bg-black overflow-hidden flex flex-col">
       <FallbackTrigger />
@@ -191,6 +214,43 @@ export default function ScanPage() {
             </span>
           </div>
           <p className="mt-2 text-muted-foreground">{banner.text}</p>
+        </div>
+      ) : null}
+
+      {activeIssueObservation || guidanceTarget ? (
+        <div className="absolute inset-x-4 top-[10.5rem] z-40 rounded-2xl border border-border/70 bg-card/92 p-3 text-sm text-foreground shadow-2xl backdrop-blur">
+          <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            Manual Assist
+          </div>
+          {activeIssueObservation ? (
+            <>
+              <p className="mt-2 text-sm text-foreground">
+                AI flagged <span className="font-semibold">{activeIssueObservation.category}</span>. You can override it.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={dismissCurrentIssue}>
+                  Not an issue
+                </Button>
+                <Button size="sm" onClick={recordCurrentIssueNow}>
+                  Add to report now
+                </Button>
+              </div>
+            </>
+          ) : guidanceTarget ? (
+            <>
+              <p className="mt-2 text-sm text-foreground">
+                Reviewing <span className="font-semibold">{guidanceTarget.label}</span>. You can advance manually.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button size="sm" onClick={markCurrentGuidanceChecked}>
+                  Mark checked
+                </Button>
+                <Button size="sm" variant="outline" onClick={skipCurrentGuidance}>
+                  Skip
+                </Button>
+              </div>
+            </>
+          ) : null}
         </div>
       ) : null}
 
@@ -258,7 +318,37 @@ export default function ScanPage() {
         >
           End & Generate Report
         </Button>
+
+        <Button
+          variant="outline"
+          className="w-full max-w-xs rounded-full h-12 border-white/25 bg-white/8 font-semibold text-white backdrop-blur-md hover:bg-white/14"
+          onClick={() => handle3DStudioOpenChange(true)}
+          disabled={!isDemoMode && scanPhase === "idle"}
+        >
+          Open 3D Scan Studio
+        </Button>
       </div>
+
+      <RoomScene3DDialog
+        key={roomType}
+        open={is3DStudioOpen}
+        onOpenChange={handle3DStudioOpenChange}
+        inspectionId={sessionStore.inspectionId}
+        roomType={roomType}
+        isDemoMode={isDemoMode}
+        captureFrame={captureFrame}
+        hazards={hazards}
+        liveEvidenceFrames={liveEvidenceFrames}
+        existingScene={currentRoomScene}
+        onSceneReady={upsertRoomScene3D}
+        onPromoteSuggestedHazard={(hazard, thumbnailBase64) => {
+          const added = addHazard(hazard);
+          if (added && thumbnailBase64) {
+            setLiveEvidenceFrame(hazard.id, thumbnailBase64);
+          }
+          return added;
+        }}
+      />
     </div>
   );
 }

@@ -210,6 +210,9 @@ export async function analyzeLiveFrame(request: LiveAnalyzeRequest): Promise<Liv
           ? [
               `Current guided checklist target: ${request.guidedCheckpoint.label}.`,
               `Checklist instructions: ${request.guidedCheckpoint.instructions}`,
+              request.guidedCheckpoint.coverageFocus
+                ? `Coverage focus: treat the target as covered if the frame clearly shows ${request.guidedCheckpoint.coverageFocus}.`
+                : "",
               'Always assess guided target visibility with checkpointCoverage.status = "not-visible" | "partial" | "covered".',
               'Use "covered" only when the requested target area is clearly framed and detailed enough for inspection.',
               'Use "partial" when the target area is somewhat visible but not yet well covered.',

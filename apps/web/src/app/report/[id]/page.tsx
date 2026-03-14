@@ -24,6 +24,7 @@ import {
   staticMapResponseSchema,
 } from "@inspect-ai/contracts";
 import { AsyncStatusBadge } from "@/components/shared/AsyncStatusBadge";
+import { RoomSceneViewer } from "@/components/scanner/RoomSceneViewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +33,7 @@ import { publicAppConfig } from "@/lib/config/public";
 import { exportReportPdf, exportReportPoster } from "@/lib/export/pdfGenerator";
 import { buildRecommendationFallbackBundle } from "@/lib/recommendationFallback";
 import { normalizeReportSnapshot } from "@/lib/report/normalizeReportSnapshot";
+import { promoteSuggestedMarkerToHazard, replaceSceneMarker } from "@/lib/roomSceneHazards";
 import { toOptionalUrl } from "@/lib/url";
 import {
   getReportSnapshot,
@@ -144,6 +146,7 @@ function buildRecoverySnapshot(reportId: string): ReportSnapshot | null {
       inspectionMode: session.inspectionMode,
     }),
     askingRent: session.askingRent || undefined,
+    roomScenes3d: session.roomScenes3d.length > 0 ? session.roomScenes3d : undefined,
   });
 }
 
@@ -681,6 +684,80 @@ export default function ReportPage() {
   const isReportStable =
     deepStatus !== "loading" && recommendationStatus !== "loading" && knowledgeStatus !== "loading" && !isBooting;
 
+  async function commitSnapshotUpdate(mutator: (current: ReportSnapshot) => ReportSnapshot) {
+    const currentSnapshot = snapshotRef.current;
+    if (!currentSnapshot) {
+      return;
+    }
+
+    const nextSnapshot = normalizeReportSnapshot(reportSnapshotSchema.parse(mutator(currentSnapshot)));
+    snapshotRef.current = nextSnapshot;
+    setSnapshot(nextSnapshot);
+    await updateReportSnapshot(nextSnapshot.reportId, nextSnapshot);
+  }
+
+  async function handleSceneChange(sceneId: string, nextScene: NonNullable<ReportSnapshot["roomScenes3d"]>[number]) {
+    await commitSnapshotUpdate((current) => ({
+      ...current,
+      roomScenes3d: current.roomScenes3d?.map((scene) => (scene.sceneId === sceneId ? nextScene : scene)),
+    }));
+  }
+
+  async function handlePromoteSuggestedMarker(
+    sceneId: string,
+    marker: NonNullable<ReportSnapshot["roomScenes3d"]>[number]["markers"][number]
+  ) {
+    const currentSnapshot = snapshotRef.current;
+    if (!currentSnapshot || marker.source !== "suggested") {
+      return;
+    }
+
+    const scene = currentSnapshot.roomScenes3d?.find((item) => item.sceneId === sceneId);
+    if (!scene) {
+      return;
+    }
+
+    const promotion = promoteSuggestedMarkerToHazard({
+      marker,
+      roomType: scene.roomType,
+    });
+    const duplicate = currentSnapshot.hazards.some(
+      (hazard) =>
+        hazard.category === promotion.hazard.category &&
+        hazard.severity === promotion.hazard.severity &&
+        hazard.description === promotion.hazard.description
+    );
+
+    if (duplicate) {
+      toast.info("A matching issue is already in the formal hazard list.");
+      return;
+    }
+
+    const nextScene = replaceSceneMarker(scene, marker.markerId, promotion.nextMarker);
+
+    await commitSnapshotUpdate((current) => ({
+      ...current,
+      hazards: [...current.hazards, promotion.hazard],
+      roomScenes3d: current.roomScenes3d?.map((item) => (item.sceneId === sceneId ? nextScene : item)),
+      exportAssets: {
+        ...current.exportAssets,
+        hazardThumbnails: [
+          ...(current.exportAssets?.hazardThumbnails ?? []),
+          ...(promotion.thumbnailBase64
+            ? [
+                {
+                  hazardId: promotion.hazard.id,
+                  base64: promotion.thumbnailBase64,
+                },
+              ]
+            : []),
+        ],
+      },
+    }));
+
+    toast.success("Suggested issue added to the formal hazard list.");
+  }
+
   async function handleExport(type: "pdf" | "poster") {
     if (!snapshot || !reportContentRef.current) {
       return;
@@ -901,6 +978,30 @@ export default function ReportPage() {
               )}
             </CardContent>
           </Card>
+
+          {snapshot.roomScenes3d?.length ? (
+            <Card className="border-border/70 bg-card/85 xl:col-span-2">
+              <CardHeader>
+                <CardDescription>4A. 3D Room View</CardDescription>
+                <CardTitle>Approximate room scenes from the on-site 3D scan studio</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-6">
+                {snapshot.roomScenes3d.map((scene) => (
+                  <RoomSceneViewer
+                    key={scene.sceneId}
+                    scene={scene}
+                    editable
+                    onSceneChange={(nextScene) => {
+                      void handleSceneChange(scene.sceneId, nextScene);
+                    }}
+                    onPromoteSuggestedMarker={(marker) => {
+                      void handlePromoteSuggestedMarker(scene.sceneId, marker);
+                    }}
+                  />
+                ))}
+              </CardContent>
+          </Card>
+          ) : null}
 
           <Card className="border-border/70 bg-card/85">
             <CardHeader>

@@ -108,6 +108,8 @@ export const hazardSchema = hazardDraftSchema.extend({
   roomType: roomTypeSchema.optional(),
   detectionMode: z.enum(["live-guided"]).optional(),
   confirmedAt: z.number().optional(),
+  sceneMarkerId: z.string().optional(),
+  source: z.enum(["live-guided", "manual", "3d-suggested"]).optional(),
 });
 export type Hazard = z.infer<typeof hazardSchema>;
 export const hazardsArraySchema = z.array(hazardSchema);
@@ -309,6 +311,7 @@ export const liveChecklistTargetSchema = z.object({
   field: z.string(),
   label: z.string(),
   instructions: z.string(),
+  coverageFocus: z.string().optional(),
   listMode: z.boolean().optional(),
 });
 export type LiveChecklistTarget = z.infer<typeof liveChecklistTargetSchema>;
@@ -408,6 +411,85 @@ export const knowledgeMatchSchema = z.object({
 });
 export type KnowledgeMatch = z.infer<typeof knowledgeMatchSchema>;
 
+export const roomSceneSurfaceIdSchema = z.enum([
+  "back-wall",
+  "left-wall",
+  "right-wall",
+  "floor",
+  "ceiling",
+]);
+export type RoomSceneSurfaceId = z.infer<typeof roomSceneSurfaceIdSchema>;
+
+export const roomSceneOpeningSchema = z.object({
+  id: z.string(),
+  type: z.enum(["door", "window", "balcony", "utility"]),
+  surfaceId: roomSceneSurfaceIdSchema,
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+  width: z.number().min(0).max(1),
+  height: z.number().min(0).max(1),
+  label: z.string().optional(),
+});
+export type RoomSceneOpening = z.infer<typeof roomSceneOpeningSchema>;
+
+export const roomSceneFurnitureSchema = z.object({
+  id: z.string(),
+  kind: z.string(),
+  label: z.string(),
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+  width: z.number().min(0).max(1),
+  depth: z.number().min(0).max(1),
+});
+export type RoomSceneFurniture = z.infer<typeof roomSceneFurnitureSchema>;
+
+export const roomSceneMarkerSchema = z.object({
+  markerId: z.string(),
+  hazardId: z.string().optional(),
+  label: z.string(),
+  summary: z.string(),
+  severity: severityLevelSchema.optional(),
+  source: z.enum(["hazard", "suggested"]).optional(),
+  surfaceId: roomSceneSurfaceIdSchema,
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+  confidence: confidenceLevelSchema.optional(),
+  thumbnailBase64: z.string().optional(),
+});
+export type RoomSceneMarker = z.infer<typeof roomSceneMarkerSchema>;
+
+export const roomScene3DSchema = z.object({
+  sceneId: z.string(),
+  roomType: roomTypeSchema,
+  title: z.string(),
+  capturedAt: z.number(),
+  captureStepsCompleted: z.array(z.string()),
+  dimensionsApprox: z.object({
+    width: z.number().positive(),
+    depth: z.number().positive(),
+    height: z.number().positive(),
+  }),
+  openings: z.array(roomSceneOpeningSchema).optional(),
+  furniture: z.array(roomSceneFurnitureSchema).optional(),
+  markers: z.array(roomSceneMarkerSchema),
+  coverageSummary: z.string().optional(),
+  previewRotation: z
+    .object({
+      x: z.number(),
+      y: z.number(),
+    })
+    .optional(),
+});
+export type RoomScene3D = z.infer<typeof roomScene3DSchema>;
+
+export const roomSceneCaptureSchema = z.object({
+  stepId: z.string(),
+  label: z.string(),
+  capturedAt: z.number(),
+  frameDataUrl: z.string(),
+});
+export type RoomSceneCapture = z.infer<typeof roomSceneCaptureSchema>;
+
 export const reportSnapshotSchema = z.object({
   reportId: z.string(),
   inspectionId: z.string(),
@@ -437,6 +519,7 @@ export const reportSnapshotSchema = z.object({
   preLeaseActionGuide: preLeaseActionGuideSchema.optional(),
   knowledgeMatches: z.array(knowledgeMatchSchema).optional(),
   paperworkChecks: peoplePaperworkChecksSchema.optional(),
+  roomScenes3d: z.array(roomScene3DSchema).optional(),
   exportAssets: z.object({
     staticMapImageBase64: z.string().optional(),
     hazardThumbnails: z.array(
@@ -486,6 +569,20 @@ export const liveAnalyzeResponseSchema = z.object({
   checkpointCoverage: liveCheckpointCoverageSchema.optional(),
 });
 export type LiveAnalyzeResponse = z.infer<typeof liveAnalyzeResponseSchema>;
+
+export const reconstructRoom3DRequestSchema = z.object({
+  inspectionId: z.string(),
+  roomType: roomTypeSchema,
+  captures: z.array(roomSceneCaptureSchema),
+  existingHazards: z.array(hazardSchema),
+  inspectionChecklist: inspectionChecklistSchema.optional(),
+});
+export type ReconstructRoom3DRequest = z.infer<typeof reconstructRoom3DRequestSchema>;
+
+export const reconstructRoom3DResponseSchema = z.object({
+  scene: roomScene3DSchema,
+});
+export type ReconstructRoom3DResponse = z.infer<typeof reconstructRoom3DResponseSchema>;
 
 export const intelligenceRequestSchema = z.object({
   inspectionMode: inspectionModeSchema,

@@ -22,6 +22,7 @@ const GENERIC_PLAN: CaptureGuidanceTarget[] = [
       section: "security",
       field: "entryAccess",
       label: "Building access",
+      coverageFocus: "entry door, lockset, intercom panel, keycard reader, concierge desk, or lobby access point",
       instructions:
         "Describe only visible building access controls, such as keycard readers, fob access, lobby gates, or concierge desk. If the frame does not show entry access clearly, omit the capture.",
     },
@@ -54,6 +55,7 @@ const ROOM_GUIDANCE_PLAN: Record<RoomType, CaptureGuidanceTarget[]> = {
         section: "pestsHiddenIssues",
         field: "bathroomSealant",
         label: "Bathroom sealant",
+        coverageFocus: "shower screen seals, silicone edges, and nearby ceiling or wall corners",
         instructions:
           "Summarize only visible shower silicone, sealant discoloration, blackening, or clean condition. Omit if the seals are not visible.",
       },
@@ -84,6 +86,7 @@ const ROOM_GUIDANCE_PLAN: Record<RoomType, CaptureGuidanceTarget[]> = {
         section: "pestsHiddenIssues",
         field: "windowSeals",
         label: "Window seals",
+        coverageFocus: "window frame corners, sealant edges, and nearby condensation or mould marks",
         instructions:
           "Describe only visible mould, staining, condensation marks, or clean condition around window seals and inner frame corners. Omit if the window edge is not visible.",
       },
@@ -98,6 +101,7 @@ const ROOM_GUIDANCE_PLAN: Record<RoomType, CaptureGuidanceTarget[]> = {
         section: "pestsHiddenIssues",
         field: "skirtingFloorEdges",
         label: "Skirting and floor edges",
+        coverageFocus: "wardrobe base, skirting boards, and floor edge transitions",
         instructions:
           "Describe only visible lifting, swelling, moisture marks, or clean condition on skirting boards and floor edges. Omit if the floor edge is not visible.",
       },
@@ -112,6 +116,7 @@ const ROOM_GUIDANCE_PLAN: Record<RoomType, CaptureGuidanceTarget[]> = {
         section: "entryCondition",
         field: "inventoryItems",
         label: "Visible furniture",
+        coverageFocus: "bed area, desk zone, wardrobe, shelving, or visible sleeping area furniture",
         instructions:
           "List the clearly visible furniture or fixtures in this sleeping area, one concise noun phrase per line, such as desk, chair, wardrobe, bed frame, or shelving. Omit if nothing identifiable is visible.",
         listMode: true,
@@ -129,6 +134,7 @@ const ROOM_GUIDANCE_PLAN: Record<RoomType, CaptureGuidanceTarget[]> = {
         section: "pestsHiddenIssues",
         field: "cabinetUnderSink",
         label: "Under-sink area",
+        coverageFocus: "sink joins, under-sink cabinet base, pipes, and moisture-prone corners",
         instructions:
           "Describe only visible moisture, staining, swelling, or dry clean condition around sink joins and cabinet base. Omit if the under-sink or join area is not visible.",
       },
@@ -143,6 +149,7 @@ const ROOM_GUIDANCE_PLAN: Record<RoomType, CaptureGuidanceTarget[]> = {
         section: "entryCondition",
         field: "inventoryItems",
         label: "Visible kitchen appliances",
+        coverageFocus: "cooktop, rangehood, microwave, oven, dishwasher, or other kitchen appliances",
         instructions:
           "List the clearly visible kitchen appliances or fixtures, one concise item per line, such as microwave, induction cooktop, oven, dishwasher, or rangehood. Omit if not visible.",
         listMode: true,
@@ -167,6 +174,7 @@ const ROOM_GUIDANCE_PLAN: Record<RoomType, CaptureGuidanceTarget[]> = {
         section: "pestsHiddenIssues",
         field: "windowSeals",
         label: "Window and balcony seals",
+        coverageFocus: "main window, balcony door, frame edges, and visible sealant lines",
         instructions:
           "Describe only visible mould, staining, condensation, or clean condition on the main window or balcony door seals. Omit if not visible.",
       },
@@ -188,6 +196,7 @@ const ROOM_GUIDANCE_PLAN: Record<RoomType, CaptureGuidanceTarget[]> = {
         section: "entryCondition",
         field: "inventoryItems",
         label: "Visible living room furniture",
+        coverageFocus: "living room furniture such as sofa, dining table, desk, shelving, or TV unit",
         instructions:
           "List the clearly visible living area furniture or fixtures, one concise item per line, such as sofa, dining table, TV cabinet, desk, or shelving. Omit if not visible.",
         listMode: true,
@@ -205,6 +214,7 @@ const ROOM_GUIDANCE_PLAN: Record<RoomType, CaptureGuidanceTarget[]> = {
         section: "kitchenBathroom",
         field: "washerDryer",
         label: "Washer / dryer",
+        coverageFocus: "washing machine, dryer, laundry taps, or appliance connections",
         instructions:
           "Describe only visible washer or dryer presence and any obvious condition notes. Omit if no laundry appliance is clearly visible.",
       },
@@ -235,6 +245,7 @@ const ROOM_GUIDANCE_PLAN: Record<RoomType, CaptureGuidanceTarget[]> = {
         section: "security",
         field: "doorLocks",
         label: "Balcony door lock",
+        coverageFocus: "balcony or sliding door handle, latch, lock hardware, and nearby threshold",
         instructions:
           "Describe only visible balcony or sliding door lock hardware and whether it appears intact. Omit if the lock is not visible.",
       },
@@ -266,6 +277,7 @@ const ROOM_GUIDANCE_PLAN: Record<RoomType, CaptureGuidanceTarget[]> = {
         section: "security",
         field: "parcelRoom",
         label: "Parcel room / mailbox",
+        coverageFocus: "mailbox bank, parcel lockers, parcel room door, or concierge collection area",
         instructions:
           "Describe only visible mailbox banks, parcel room signage, collection lockers, or concierge parcel handling cues. Omit if not visible.",
       },
@@ -280,6 +292,7 @@ const ROOM_GUIDANCE_PLAN: Record<RoomType, CaptureGuidanceTarget[]> = {
         section: "buildingManagement",
         field: "bulkyWaste",
         label: "Bulky waste handling",
+        coverageFocus: "waste chute signage, rubbish room signs, or bulky waste instructions",
         instructions:
           "Describe only visible waste chute labels, rubbish room signs, or bulky waste instructions. Omit if none are visible.",
       },
@@ -297,6 +310,7 @@ const ROOM_GUIDANCE_PLAN: Record<RoomType, CaptureGuidanceTarget[]> = {
         section: "security",
         field: "intercom",
         label: "Intercom / panel",
+        coverageFocus: "intercom, keypad, buzzer panel, or access control hardware",
         instructions:
           "Describe only visible intercom, keypad, or entry panel hardware. Omit if not visible.",
       },
@@ -323,10 +337,11 @@ export function getNextGuidanceTarget(args: {
   roomType: RoomType;
   completedIds?: string[];
   currentTargetId?: string | null;
+  skipTargetId?: string | null;
 }) {
   const plan = getRoomGuidancePlan(args.roomType);
   const completed = new Set(args.completedIds ?? []);
-  const remaining = plan.filter((target) => !completed.has(target.id));
+  const remaining = plan.filter((target) => !completed.has(target.id) && target.id !== args.skipTargetId);
 
   if (remaining.length === 0) {
     return null;

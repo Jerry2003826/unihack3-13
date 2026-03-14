@@ -43,6 +43,8 @@ export const appEnv = {
   geminiApiKey: readEnv("GEMINI_API_KEY"),
   geminiVisionModel: readEnv("GEMINI_VISION_MODEL") ?? "gemini-2.5-flash",
   geminiLiveModel: readEnv("GEMINI_LIVE_MODEL") ?? "gemini-2.5-flash",
+  geminiSceneExtractModel: readEnv("GEMINI_SCENE_EXTRACT_MODEL") ?? "gemini-2.5-flash",
+  geminiSceneSynthesisModel: readEnv("GEMINI_SCENE_SYNTHESIS_MODEL") ?? "gemini-2.5-pro",
   geminiGroundedModel: readEnv("GEMINI_GROUNDED_MODEL") ?? "gemini-2.5-flash",
   geminiIntelligenceModel: readEnv("GEMINI_INTELLIGENCE_MODEL") ?? "gemini-2.5-flash-lite",
   geminiReasoningModel: readEnv("GEMINI_REASONING_MODEL") ?? "gemini-2.5-pro",

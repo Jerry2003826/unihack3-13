@@ -11,7 +11,7 @@ import type {
 import { liveAnalyzeResponseSchema } from "@inspect-ai/contracts";
 import { publicAppConfig } from "@/lib/config/public";
 import { DEFAULT_DEMO_TIMELINE } from "@/lib/constants/fallback";
-import { applyLiveChecklistCapture } from "@/lib/inspectionChecklist";
+import { applyLiveChecklistCapture, getInspectionChecklistFieldValue } from "@/lib/inspectionChecklist";
 import {
   buildGuidanceAlertKey,
   getGuidanceProgress,
@@ -131,6 +131,7 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
 
   const [banner, setBanner] = useState<ScanBannerState>({ tone: null, text: null });
   const [guidanceTarget, setGuidanceTarget] = useState<CaptureGuidanceTarget | null>(null);
+  const [activeIssueObservation, setActiveIssueObservation] = useState<LiveObservation | null>(null);
   const loopRef = useRef<number | null>(null);
   const isFetchingRef = useRef(false);
   const startTimeRef = useRef<number>(0);
@@ -146,6 +147,7 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
   const completedGuidanceIdsRef = useRef<Partial<Record<RoomType, string[]>>>({});
   const guidanceStartedAtRef = useRef<number>(0);
   const guidanceCoverageHistoryRef = useRef<Partial<Record<RoomType, Partial<Record<string, GuidanceCoverageSample[]>>>>>({});
+  const dismissedIssueKeysRef = useRef<string[]>([]);
 
   useEffect(() => {
     if (!isDemoMode) {
@@ -204,11 +206,19 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
   }, []);
 
   const selectNextGuidanceTarget = useCallback(
-    (targetRoomType: RoomType, now: number, currentTargetId?: string | null) => {
+    (
+      targetRoomType: RoomType,
+      now: number,
+      options?: {
+        currentTargetId?: string | null;
+        skipTargetId?: string | null;
+      }
+    ) => {
       const nextTarget = getNextGuidanceTarget({
         roomType: targetRoomType,
         completedIds: getCompletedGuidanceIds(targetRoomType),
-        currentTargetId,
+        currentTargetId: options?.currentTargetId,
+        skipTargetId: options?.skipTargetId,
       });
 
       if (nextTarget) {
@@ -237,6 +247,38 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
     [getCompletedGuidanceIds]
   );
 
+  const resumeGuidanceFlow = useCallback(
+    async (args?: { now?: number; prefix?: string }) => {
+      const now = args?.now ?? Date.now();
+      activeTargetRef.current = null;
+      focusHistoryRef.current = [];
+      lostTargetAtRef.current = null;
+      setActiveTargetId(null);
+      setActiveIssueObservation(null);
+      const nextTarget = selectNextGuidanceTarget(roomType, now);
+      const nextText = nextTarget ? getGuidanceBannerText(nextTarget, roomType) : "Continue scanning the room.";
+      const bannerText = args?.prefix ? `${args.prefix} ${nextText}` : nextText;
+      setBanner({
+        tone: "guidance",
+        text: bannerText,
+      });
+
+      if (nextTarget && lastGuidanceTargetIdRef.current !== nextTarget.id) {
+        lastGuidanceTargetIdRef.current = nextTarget.id;
+        await playAlert({
+          inspectionId: inspectionId ?? "live-scan",
+          alertKey: buildGuidanceAlertKey({
+            roomType,
+            targetId: nextTarget.id,
+          }),
+          text: nextTarget.voiceText,
+          severity: "Low",
+        });
+      }
+    },
+    [getGuidanceBannerText, inspectionId, playAlert, roomType, selectNextGuidanceTarget, setActiveTargetId]
+  );
+
   const handleGuidance = useCallback(
     async (args: {
       response: LiveAnalyzeResponse;
@@ -244,7 +286,9 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
       requestedGuidanceTarget: CaptureGuidanceTarget | null;
     }) => {
       const now = Date.now();
-      const observations = args.response.observations;
+      const observations = args.response.observations.filter(
+        (observation) => !dismissedIssueKeysRef.current.includes(buildLiveAlertKey(observation))
+      );
       const currentTarget = activeTargetRef.current;
       setLiveCandidates(observations);
       let guidanceCompletedThisTick = false;
@@ -315,6 +359,7 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
           shouldAutoRecordLiveHazard(primaryObservation) &&
           (primaryObservation.attentionLevel === "move-closer" || primaryObservation.attentionLevel === "confirm")
         ) {
+          setActiveIssueObservation(primaryObservation);
           activeTargetRef.current =
             args.response.primaryTarget ?? {
               observationId: primaryObservation.observationId,
@@ -348,6 +393,7 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
         }
 
         const watchObservation = observations.find((observation) => observation.attentionLevel === "watch");
+        setActiveIssueObservation(null);
         const currentGuidanceTarget = guidanceTargetRef.current;
         const currentGuidanceCoverage = currentGuidanceTarget
           ? getGuidanceCoverageHistory(roomType, currentGuidanceTarget.id)
@@ -362,11 +408,10 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
           currentGuidanceCoverage.some((sample) => sample.status === "covered");
 
         const nextGuidanceTarget = shouldAdvanceGuidance
-          ? selectNextGuidanceTarget(
-              roomType,
-              now,
-              shouldMarkCurrentAsCompleted ? undefined : currentGuidanceTarget?.id
-            )
+          ? selectNextGuidanceTarget(roomType, now, {
+              skipTargetId:
+                shouldMarkCurrentAsCompleted || !currentGuidanceTarget ? undefined : currentGuidanceTarget.id,
+            })
           : currentGuidanceTarget;
         const guidanceText =
           watchObservation?.guidanceText ??
@@ -402,6 +447,7 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
           activeTargetRef.current = null;
           focusHistoryRef.current = [];
           setActiveTargetId(null);
+          setActiveIssueObservation(null);
           const nextGuidanceTarget = selectNextGuidanceTarget(roomType, now);
           setBanner({
             tone: "guidance",
@@ -421,6 +467,7 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
         phase: "focus",
       };
       setActiveTargetId(matchingObservation.observationId);
+      setActiveIssueObservation(matchingObservation);
       setGuidanceTargetState(null, now);
       lastGuidanceTargetIdRef.current = null;
       focusHistoryRef.current = trimFocusHistory(
@@ -489,6 +536,7 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
         focusHistoryRef.current = [];
         setLiveCandidates([]);
         setActiveTargetId(null);
+        setActiveIssueObservation(null);
         selectNextGuidanceTarget(roomType, now);
         setBanner({
           tone: "success",
@@ -511,6 +559,7 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
     },
     [
       addHazard,
+      dismissedIssueKeysRef,
       getCompletedGuidanceIds,
       inspectionId,
       getGuidanceBannerText,
@@ -521,6 +570,7 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
       roomType,
       selectNextGuidanceTarget,
       setActiveTargetId,
+      setActiveIssueObservation,
       setLastConfirmedAt,
       setLiveCandidates,
       setLiveEvidenceFrame,
@@ -681,8 +731,152 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
     });
   }, [getGuidanceBannerText, roomType, scanPhase, selectNextGuidanceTarget]);
 
+  const markCurrentGuidanceChecked = useCallback(async () => {
+    const target = guidanceTargetRef.current;
+    if (!target) {
+      return;
+    }
+
+    const now = Date.now();
+    if (target.checkpoint) {
+      const currentChecklist = useSessionStore.getState().inspectionChecklist;
+      const existingValue = getInspectionChecklistFieldValue(
+        currentChecklist,
+        target.checkpoint.section,
+        target.checkpoint.field
+      );
+
+      if (!existingValue.trim()) {
+        const manualCaptureValue = target.checkpoint.listMode
+          ? `Manually reviewed: ${target.label}`
+          : `Manually reviewed during live scan: ${target.label}.`;
+        const nextChecklist = applyLiveChecklistCapture(
+          currentChecklist,
+          {
+            section: target.checkpoint.section,
+            field: target.checkpoint.field,
+            value: manualCaptureValue,
+            confidence: "medium",
+            summary: "Manual review",
+          },
+          {
+            listMode: target.checkpoint.listMode,
+          }
+        );
+        updateInspectionDraft({
+          inspectionChecklist: nextChecklist,
+        });
+      }
+    }
+
+    markGuidanceCompleted(roomType, target.id);
+    toast.success(`Marked checked: ${target.label}`);
+    await resumeGuidanceFlow({
+      now,
+      prefix: `${target.label} marked checked.`,
+    });
+  }, [markGuidanceCompleted, resumeGuidanceFlow, roomType, updateInspectionDraft]);
+
+  const skipCurrentGuidance = useCallback(async () => {
+    const target = guidanceTargetRef.current;
+    if (!target) {
+      return;
+    }
+
+    const now = Date.now();
+    const nextTarget = selectNextGuidanceTarget(roomType, now, {
+      skipTargetId: target.id,
+    });
+    setActiveIssueObservation(null);
+    setBanner({
+      tone: "guidance",
+      text: nextTarget ? `Skipped ${target.label}. ${getGuidanceBannerText(nextTarget, roomType)}` : `Skipped ${target.label}. Continue scanning.`,
+    });
+    lastGuidanceTargetIdRef.current = null;
+    toast.info(`Skipped: ${target.label}`);
+  }, [getGuidanceBannerText, roomType, selectNextGuidanceTarget]);
+
+  const dismissCurrentIssue = useCallback(async () => {
+    const observation = activeIssueObservation;
+    if (!observation) {
+      return;
+    }
+
+    const suppressionKey = buildLiveAlertKey(observation);
+    if (!dismissedIssueKeysRef.current.includes(suppressionKey)) {
+      dismissedIssueKeysRef.current = [...dismissedIssueKeysRef.current.slice(-20), suppressionKey];
+    }
+
+    setLiveCandidates(
+      useHazardStore
+        .getState()
+        .liveCandidates.filter((candidate) => buildLiveAlertKey(candidate) !== suppressionKey)
+    );
+    toast.info(`Dismissed: ${observation.category}`);
+    await resumeGuidanceFlow({
+      prefix: "Marked as not an issue.",
+    });
+  }, [activeIssueObservation, resumeGuidanceFlow, setLiveCandidates]);
+
+  const recordCurrentIssueNow = useCallback(async () => {
+    const observation = activeIssueObservation;
+    if (!observation) {
+      return;
+    }
+
+    const now = Date.now();
+    const manualHazard = {
+      id: crypto.randomUUID(),
+      category: observation.category,
+      severity: observation.severity,
+      description: observation.description,
+      boundingBox: observation.boundingBox,
+      detectedAt: now,
+      confirmedAt: now,
+      roomType,
+      sourceEventId: inspectionId ?? "live-scan-manual",
+      detectionMode: "live-guided" as const,
+    };
+
+    const added = addHazard(manualHazard);
+    if (added) {
+      recentConfirmedIdsRef.current = [...recentConfirmedIdsRef.current.slice(-5), observation.observationId];
+      setLastConfirmedAt(now);
+      const frameDataUrl = captureFrame();
+      if (frameDataUrl) {
+        const thumbnail = await createLiveHazardThumbnail({
+          frameDataUrl,
+          boundingBox: observation.boundingBox,
+        });
+        if (thumbnail) {
+          setLiveEvidenceFrame(manualHazard.id, thumbnail);
+        }
+      }
+      toast.success(`${observation.category} added to report.`);
+    }
+
+    await resumeGuidanceFlow({
+      now,
+      prefix: `${observation.category} recorded manually.`,
+    });
+  }, [
+    activeIssueObservation,
+    addHazard,
+    captureFrame,
+    inspectionId,
+    resumeGuidanceFlow,
+    roomType,
+    setLastConfirmedAt,
+    setLiveEvidenceFrame,
+  ]);
+
   return {
     banner,
     guidanceTarget,
+    activeIssueObservation,
+    markCurrentGuidanceChecked,
+    skipCurrentGuidance,
+    dismissCurrentIssue,
+    recordCurrentIssueNow,
   };
 }
