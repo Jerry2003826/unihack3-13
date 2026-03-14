@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,6 +64,11 @@ function normalizeText(value) {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function qdrantPointId(value) {
+  const hex = createHash("sha256").update(value).digest("hex").slice(0, 32);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
 function findChunkBoundary(text, start, suggestedEnd) {
   const max = Math.min(text.length, suggestedEnd + 60);
   const min = Math.min(text.length, start + Math.floor(KNOWLEDGE_CHUNK_TARGET * 0.55));
@@ -105,7 +111,7 @@ function chunkDocument(doc) {
   }
 
   return chunks.map((content, chunkIndex) => ({
-    id: `${doc.sourceId}::${chunkIndex}`,
+    id: qdrantPointId(`${doc.sourceId}::${chunkIndex}`),
     payload: {
       documentId: doc.sourceId,
       chunkId: `${doc.sourceId}::${chunkIndex}`,
