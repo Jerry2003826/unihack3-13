@@ -202,7 +202,7 @@ export default function ScanPage() {
       <BoundingBoxOverlay guidanceTarget={guidanceTarget} />
 
       {banner.text ? (
-        <div className="absolute inset-x-4 top-24 z-40 rounded-2xl border border-border/70 bg-card/92 px-4 py-3 text-sm text-foreground shadow-2xl backdrop-blur">
+        <div className="absolute inset-x-3 top-20 z-40 rounded-2xl border border-border/70 bg-card/92 px-4 py-3 text-sm text-foreground shadow-2xl backdrop-blur sm:inset-x-4 sm:top-24">
           <div className="flex items-center gap-2">
             <span
               className={`size-2 rounded-full ${
@@ -218,7 +218,7 @@ export default function ScanPage() {
       ) : null}
 
       {activeIssueObservation || guidanceTarget ? (
-        <div className="absolute inset-x-4 top-[10.5rem] z-40 rounded-2xl border border-border/70 bg-card/92 p-3 text-sm text-foreground shadow-2xl backdrop-blur">
+        <div className="absolute inset-x-3 top-[9.25rem] z-40 rounded-2xl border border-border/70 bg-card/92 p-3 text-sm text-foreground shadow-2xl backdrop-blur sm:inset-x-4 sm:top-[10.5rem]">
           <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             Manual Assist
           </div>
@@ -255,7 +255,7 @@ export default function ScanPage() {
       ) : null}
 
       {cameraError ? (
-        <div className="absolute inset-x-4 top-24 z-40 rounded-2xl border border-border/70 bg-card/95 p-4 text-sm text-foreground shadow-2xl backdrop-blur">
+        <div className="absolute inset-x-3 top-20 z-40 rounded-2xl border border-border/70 bg-card/95 p-4 text-sm text-foreground shadow-2xl backdrop-blur sm:inset-x-4 sm:top-24">
           <div className="font-medium">Camera access was denied.</div>
           <p className="mt-2 text-muted-foreground">
             {cameraError}
@@ -272,7 +272,7 @@ export default function ScanPage() {
       ) : null}
 
       {/* Top Header: Room Selection */}
-      <div className="absolute top-0 inset-x-0 z-30 p-4 bg-gradient-to-b from-black/80 to-transparent">
+      <div className="absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-black/80 to-transparent p-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4">
         <select 
           className="w-full bg-background/50 backdrop-blur-md text-foreground border border-border/50 rounded-md px-3 py-2 text-sm focus:ring-accent"
           value={roomType}
@@ -293,10 +293,10 @@ export default function ScanPage() {
       </div>
 
       {/* Bottom Controls */}
-      <div className="absolute bottom-0 inset-x-0 z-30 p-6 bg-gradient-to-t from-black/90 via-black/50 to-transparent flex flex-col items-center gap-4 pb-safe">
+      <div className="absolute inset-x-0 bottom-0 z-30 flex flex-col items-center gap-3 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-4 pb-safe sm:gap-4 sm:p-6">
         {scanPhase === "idle" || scanPhase === "stopped" ? (
           <Button 
-            className="w-full max-w-xs rounded-full h-14 bg-accent text-accent-foreground text-lg shadow-[0_0_20px_rgba(61,220,255,0.4)]"
+            className="h-12 w-full max-w-xs rounded-full bg-accent text-base text-accent-foreground shadow-[0_0_20px_rgba(61,220,255,0.4)] sm:h-14 sm:text-lg"
             onClick={handleStartScan}
           >
             Start Scan
@@ -304,7 +304,7 @@ export default function ScanPage() {
         ) : (
           <Button 
             variant="secondary"
-            className="w-full max-w-xs rounded-full h-14 text-lg backdrop-blur-md bg-white/20 text-white hover:bg-white/30"
+            className="h-12 w-full max-w-xs rounded-full bg-white/20 text-base text-white backdrop-blur-md hover:bg-white/30 sm:h-14 sm:text-lg"
             onClick={handlePauseScan}
           >
             Pause
@@ -313,7 +313,7 @@ export default function ScanPage() {
 
         <Button 
           variant="destructive"
-          className="w-full max-w-xs rounded-full h-12 mt-2 font-semibold"
+          className="mt-1 h-11 w-full max-w-xs rounded-full font-semibold sm:mt-2 sm:h-12"
           onClick={handleEndScan}
         >
           End & Generate Report
@@ -321,7 +321,7 @@ export default function ScanPage() {
 
         <Button
           variant="outline"
-          className="w-full max-w-xs rounded-full h-12 border-white/25 bg-white/8 font-semibold text-white backdrop-blur-md hover:bg-white/14"
+          className="h-11 w-full max-w-xs rounded-full border-white/25 bg-white/8 font-semibold text-white backdrop-blur-md hover:bg-white/14 sm:h-12"
           onClick={() => handle3DStudioOpenChange(true)}
           disabled={!isDemoMode && scanPhase === "idle"}
         >

@@ -1,10 +1,10 @@
-# Inspect.AI
+# RentRadar
 
 中文 | [English](#english)
 
-Inspect.AI 是一个面向租房/看房场景的 AI 辅助风险检查系统。它把实时扫描、图片分析、地理情报、租前建议、比较推荐、3D 房间示意和报告导出放在同一套产品流程里。
+RentRadar 是一个面向租房/看房场景的 AI 辅助风险检查系统。它把实时扫描、图片分析、地理情报、租前建议、比较推荐、3D 房间示意和报告导出放在同一套产品流程里。
 
-Inspect.AI is an AI-assisted rental inspection and decision-support system. It combines live scan guidance, image analysis, location intelligence, pre-lease advice, multi-property comparison, approximate 3D room views, and exportable reports in one workflow.
+RentRadar is an AI-assisted rental inspection and decision-support system. It combines live scan guidance, image analysis, location intelligence, pre-lease advice, multi-property comparison, approximate 3D room views, and exportable reports in one workflow.
 
 ---
 
@@ -12,7 +12,7 @@ Inspect.AI is an AI-assisted rental inspection and decision-support system. It c
 
 ### 1. 项目概览
 
-Inspect.AI 解决的是“看房时信息不完整、签约前风险难判断、检查记录容易遗漏”的问题。当前系统支持：
+RentRadar 解决的是“看房时信息不完整、签约前风险难判断、检查记录容易遗漏”的问题。当前系统支持：
 
 - 实时扫描 `Live Inspection`
   - 相机实时取景
@@ -403,7 +403,7 @@ pnpm build
 
 ### 1. Overview
 
-Inspect.AI is an AI-assisted rental inspection and decision-support platform. It helps renters or property viewers inspect homes, collect evidence, understand local risk signals, compare multiple properties, and export decision-ready reports.
+RentRadar is an AI-assisted rental inspection and decision-support platform. It helps renters or property viewers inspect homes, collect evidence, understand local risk signals, compare multiple properties, and export decision-ready reports.
 
 Current capabilities:
 
@@ -708,4 +708,3 @@ pnpm build
   - `success`
   - `fallback`
   - `error`
-

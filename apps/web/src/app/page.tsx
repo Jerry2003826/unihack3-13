@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   ChevronRight,
   Cpu,
+  GitCompareArrows,
   History,
   Scan,
   ShieldCheck,
@@ -123,6 +124,7 @@ export default function HomePage() {
     if (isExiting) return "RE-ESTABLISHING MACRO VIEW...";
     return SHAPE_TYPES.find((shape) => shape.id === systemState)?.name || "EXTERNAL MACRO SCAN";
   };
+  const statusText = getStatusText();
 
   const handleUseCurrentLocation = async () => {
     setLocationStatus("loading");
@@ -197,7 +199,7 @@ export default function HomePage() {
   };
 
   return (
-    <div className="relative min-h-[100dvh] overflow-hidden bg-[#090B12] text-[#E7ECF3] selection:bg-[#3DDCFF] selection:text-[#090B12]">
+    <div className="relative min-h-[100dvh] overflow-x-hidden bg-[#090B12] text-[#E7ECF3] selection:bg-[#3DDCFF] selection:text-[#090B12]">
       <style jsx global>{`
         @keyframes scan-line {
           0% {
@@ -244,32 +246,158 @@ export default function HomePage() {
         <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#090B12]/95 to-transparent" />
       </div>
 
-      <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
-        <div className="absolute right-4 top-6 flex gap-2 sm:right-8 sm:top-8 lg:right-12 lg:top-10">
+      <main className="relative z-20 flex min-h-[100dvh] flex-col px-4 pb-8 pt-[max(0.75rem,env(safe-area-inset-top))] lg:hidden">
+        <div className="flex flex-1 flex-col">
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-white/15 bg-[#090B12]/60 px-3 text-white hover:bg-white/10"
+              onClick={() => router.push("/compare")}
+            >
+              <GitCompareArrows className="size-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-white/15 bg-[#090B12]/60 px-3 text-white hover:bg-white/10"
+              onClick={() => router.push("/history")}
+            >
+              <History className="size-4" />
+            </Button>
+          </div>
+
+          <section className="mt-8 max-w-[22rem] space-y-5">
+            <div
+              className={`inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] shadow-[0_0_15px_rgba(0,0,0,0.5)] backdrop-blur-md transition-all duration-500 ${
+                isWarning
+                  ? "border-[#FF2A3F]/80 bg-[#FF2A3F]/20 text-[#FF2A3F]"
+                  : isInterior
+                    ? "border-[#29D391]/80 bg-[#29D391]/10 text-[#29D391]"
+                    : "border-[#3DDCFF]/40 bg-[#090B12]/60 text-[#3DDCFF]"
+              }`}
+            >
+              {isWarning ? (
+                <AlertTriangle className="size-4 animate-pulse" />
+              ) : isInterior ? (
+                <ShieldCheck className="size-4" />
+              ) : (
+                <Activity className="size-4 animate-pulse" />
+              )}
+              <span className="truncate">{isWarning ? "BREACH PROTOCOL INIT" : isInterior ? "MICRO-SCALE MAPPING" : "MACRO-SCALE MAPPING"}</span>
+            </div>
+
+            <h1
+              className="text-[3.4rem] font-black leading-none tracking-tighter text-white drop-shadow-2xl"
+              style={{ fontFamily: "var(--font-space-grotesk), sans-serif" }}
+            >
+              Rent
+              <span className="bg-gradient-to-r from-[#3DDCFF] to-[#29D391] bg-clip-text text-transparent">Radar</span>
+            </h1>
+
+            <div className="text-sm font-semibold uppercase tracking-[0.22em] text-[#3DDCFF]">
+              Scan Deeper. Rent Smarter.
+            </div>
+
+            <p className="max-w-[23rem] text-sm font-light leading-relaxed text-gray-300 drop-shadow-md">
+              An AI-first rental inspection copilot built for faster screening, stronger evidence capture, and
+              smarter lease decisions.
+              <span className="font-medium text-white"> Move past surface impressions and inspect what actually matters.</span>
+            </p>
+
+            <div className="flex max-w-sm flex-col gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setActiveMode("live")}
+                className="group relative flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-[#3DDCFF] px-5 py-4 text-base font-bold text-[#090B12] shadow-[0_0_30px_rgba(0,0,0,0.4)] transition-all duration-700 active:scale-95"
+              >
+                <span className="absolute inset-0 translate-y-full bg-white/30 transition-transform duration-300 group-hover:translate-y-0" />
+                <Scan className="relative z-10 size-5" />
+                <span className="relative z-10 tracking-wide">Enter Deep Scan</span>
+                <ChevronRight className="relative z-10 size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveMode("manual")}
+                className="group flex items-center justify-center gap-2 rounded-xl border border-white/20 px-5 py-4 font-semibold text-white backdrop-blur-md transition-all hover:bg-white/10"
+              >
+                <Upload className="size-5 text-gray-400 transition-colors group-hover:text-white" />
+                <span>Manual Override</span>
+              </button>
+            </div>
+          </section>
+
+          <div className="mt-auto space-y-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-8">
+            <section className="rounded-[26px] border border-[#3DDCFF]/20 bg-[#090B12]/80 shadow-[0_15px_40px_rgba(0,0,0,0.8)] backdrop-blur-xl">
+              <div className="border-b border-[#3DDCFF]/20 p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-mono uppercase tracking-widest text-[#3DDCFF]">TARGET LOCK</div>
+                    <div className="max-w-[14rem] font-mono text-xs font-semibold tracking-wider text-white">
+                      {statusText}
+                    </div>
+                  </div>
+                  <div className="inline-flex items-center gap-1.5 rounded border border-[#3DDCFF]/40 bg-[#3DDCFF]/15 px-2.5 py-1 text-[10px] font-mono text-[#3DDCFF]">
+                    <div className="size-1.5 animate-pulse rounded-full bg-[#3DDCFF]" />
+                    {isInterior ? "MICRO-SCAN" : "MACRO-SCAN"}
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 p-4">
+                <div
+                  className={`rounded-xl border p-3 transition-all duration-500 ${
+                    hazardCount > 0 ? "border-[#FF2A3F]/40 bg-[#FF2A3F]/15" : "border-[#3DDCFF]/10 bg-[#3DDCFF]/5"
+                  }`}
+                >
+                  <div className={`mb-1 text-[10px] font-mono uppercase tracking-wider ${hazardCount > 0 ? "text-[#FF2A3F]" : "text-[#3DDCFF]"}`}>
+                    Detected Hazards
+                  </div>
+                  <div className={`flex items-center gap-2 font-mono text-2xl font-bold ${hazardCount > 0 ? "text-[#FF2A3F]" : "text-[#3DDCFF]"}`}>
+                    {hazardCount.toString().padStart(2, "0")}
+                    {hazardCount > 0 ? <span className="size-2 rounded-full bg-[#FF2A3F] animate-ping" /> : null}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-[#3DDCFF]/20 bg-[#3DDCFF]/10 p-3">
+                  <div className="mb-1 text-[10px] font-mono uppercase tracking-wider text-[#3DDCFF]">Data Integrity</div>
+                  <div className="font-mono text-2xl font-bold text-[#3DDCFF]">{Math.max(0, 100 - hazardCount)}%</div>
+                </div>
+              </div>
+            </section>
+
+            <div className="text-[10px] font-mono uppercase tracking-widest text-gray-500">
+              LATENCY: 12MS // PROTOCOL: {isInterior ? "INDOOR_MAPPING" : "EXTERIOR_SYNC"}
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <div className="pointer-events-none absolute inset-0 z-20 hidden overflow-hidden lg:block">
+        <div className="absolute left-4 right-4 top-4 flex justify-end gap-2 sm:left-auto sm:right-8 sm:top-8 lg:right-12 lg:top-10">
           <Button
             variant="outline"
             size="sm"
-            className="pointer-events-auto border-white/15 bg-[#090B12]/60 text-white hover:bg-white/10"
+            className="pointer-events-auto border-white/15 bg-[#090B12]/60 px-3 text-white hover:bg-white/10"
             onClick={() => router.push("/compare")}
           >
-            Compare
+            <GitCompareArrows className="size-4 sm:mr-2" />
+            <span className="hidden sm:inline">Compare</span>
           </Button>
           <Button
             variant="outline"
             size="sm"
-            className="pointer-events-auto border-white/15 bg-[#090B12]/60 text-white hover:bg-white/10"
+            className="pointer-events-auto border-white/15 bg-[#090B12]/60 px-3 text-white hover:bg-white/10"
             onClick={() => router.push("/history")}
           >
-            <History className="mr-2 size-4" />
-            History
+            <History className="size-4 sm:mr-2" />
+            <span className="hidden sm:inline">History</span>
           </Button>
         </div>
 
         <div
-          className="inspect-animate-fade-up absolute left-6 top-8 max-w-xl space-y-6 sm:left-10 sm:top-12 lg:left-16 lg:top-16"
+          className="inspect-animate-fade-up absolute left-4 right-4 top-20 max-w-[22rem] space-y-5 sm:left-10 sm:right-auto sm:top-12 sm:max-w-xl sm:space-y-6 lg:left-16 lg:top-16"
         >
           <div
-            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(0,0,0,0.5)] backdrop-blur-md transition-all duration-500 ${
+            className={`inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] shadow-[0_0_15px_rgba(0,0,0,0.5)] backdrop-blur-md transition-all duration-500 sm:tracking-[0.2em] ${
               isWarning
                 ? "border-[#FF2A3F]/80 bg-[#FF2A3F]/20 text-[#FF2A3F]"
                 : isInterior
@@ -284,28 +412,32 @@ export default function HomePage() {
             ) : (
               <Activity className="size-4 animate-pulse" />
             )}
-            <span>{isWarning ? "BREACH PROTOCOL INIT" : isInterior ? "MICRO-SCALE MAPPING" : "MACRO-SCALE MAPPING"}</span>
+            <span className="truncate">{isWarning ? "BREACH PROTOCOL INIT" : isInterior ? "MICRO-SCALE MAPPING" : "MACRO-SCALE MAPPING"}</span>
           </div>
 
           <h1
-            className="text-5xl font-black tracking-tighter text-white drop-shadow-2xl sm:text-7xl lg:text-8xl"
+            className="text-[3.8rem] font-black leading-none tracking-tighter text-white drop-shadow-2xl sm:text-7xl lg:text-8xl"
             style={{ fontFamily: "var(--font-space-grotesk), sans-serif" }}
           >
-            Inspect
-            <br />
-            <span className="bg-gradient-to-r from-[#3DDCFF] to-[#29D391] bg-clip-text text-transparent">.AI</span>
+            Rent
+            <span className="bg-gradient-to-r from-[#3DDCFF] to-[#29D391] bg-clip-text text-transparent">Radar</span>
           </h1>
 
-          <p className="max-w-lg text-base font-light leading-relaxed text-gray-300 drop-shadow-md md:text-xl">
-            全栈级智能租房风控终端。结合视觉检测引擎与空间数据检索，
-            <span className="font-medium text-white"> 无缝穿透建筑表象，直达室内微观隐患节点。</span>
+          <div className="text-sm font-semibold uppercase tracking-[0.22em] text-[#3DDCFF] sm:text-base">
+            Scan Deeper. Rent Smarter.
+          </div>
+
+          <p className="max-w-[23rem] text-sm font-light leading-relaxed text-gray-300 drop-shadow-md sm:max-w-lg sm:text-base md:text-xl">
+            An AI-first rental inspection copilot built for faster screening, stronger evidence capture, and smarter
+            lease decisions.
+            <span className="font-medium text-white"> Move past surface impressions and inspect what actually matters.</span>
           </p>
 
-          <div className="flex flex-col gap-4 pt-4 sm:flex-row">
+          <div className="flex max-w-sm flex-col gap-3 pt-2 sm:flex-row sm:gap-4 sm:pt-4">
             <button
               type="button"
               onClick={() => setActiveMode("live")}
-              className="pointer-events-auto group relative flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-[#3DDCFF] px-6 py-4 font-bold text-[#090B12] shadow-[0_0_30px_rgba(0,0,0,0.4)] transition-all duration-700 hover:scale-[1.02] active:scale-95"
+              className="pointer-events-auto group relative flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-[#3DDCFF] px-5 py-4 text-base font-bold text-[#090B12] shadow-[0_0_30px_rgba(0,0,0,0.4)] transition-all duration-700 hover:scale-[1.02] active:scale-95 sm:px-6"
             >
               <span className="absolute inset-0 translate-y-full bg-white/30 transition-transform duration-300 group-hover:translate-y-0" />
               <Scan className="relative z-10 size-5" />
@@ -315,7 +447,7 @@ export default function HomePage() {
             <button
               type="button"
               onClick={() => setActiveMode("manual")}
-              className="pointer-events-auto group flex items-center justify-center gap-2 rounded-xl border border-white/20 px-6 py-4 font-semibold text-white backdrop-blur-md transition-all hover:bg-white/10"
+              className="pointer-events-auto group flex items-center justify-center gap-2 rounded-xl border border-white/20 px-5 py-4 font-semibold text-white backdrop-blur-md transition-all hover:bg-white/10 sm:px-6"
             >
               <Upload className="size-5 text-gray-400 transition-colors group-hover:text-white" />
               <span>Manual Override</span>
@@ -324,26 +456,26 @@ export default function HomePage() {
         </div>
 
         <div
-          className="inspect-animate-fade-up absolute bottom-20 right-4 z-50 w-64 sm:bottom-24 sm:right-8 sm:w-72 md:w-80 lg:bottom-24 lg:right-12"
+          className="inspect-animate-fade-up absolute inset-x-4 bottom-20 z-50 sm:inset-x-auto sm:bottom-24 sm:right-8 sm:w-72 md:w-80 lg:bottom-24 lg:right-12"
           style={{ animationDelay: "200ms" }}
         >
-          <div className="relative w-full overflow-hidden rounded-3xl border border-[#3DDCFF]/20 bg-[#090B12]/80 shadow-[0_15px_40px_rgba(0,0,0,0.8)] backdrop-blur-xl transition-all duration-500 hover:scale-[1.02]">
+          <div className="relative w-full overflow-hidden rounded-[26px] border border-[#3DDCFF]/20 bg-[#090B12]/80 shadow-[0_15px_40px_rgba(0,0,0,0.8)] backdrop-blur-xl transition-all duration-500 hover:scale-[1.02]">
             <div className="pointer-events-none absolute inset-0">
               <div className="inspect-animate-scan h-0.5 w-full bg-[#3DDCFF] opacity-50 shadow-[0_0_15px_currentColor]" />
             </div>
 
-            <div className="flex flex-col gap-4 p-5 sm:p-6">
+            <div className="flex flex-col gap-3 p-4 sm:gap-4 sm:p-6">
               <div className="flex items-start justify-between border-b border-[#3DDCFF]/20 pb-3">
                 <div className="space-y-1">
                   <div className="text-[10px] font-mono uppercase tracking-widest text-[#3DDCFF]">TARGET LOCK</div>
-                  <div key={getStatusText()} className="inspect-animate-fade-up font-mono text-sm font-semibold tracking-wider text-white">
-                    {getStatusText()}
+                  <div key={statusText} className="inspect-animate-fade-up max-w-[14rem] font-mono text-xs font-semibold tracking-wider text-white sm:max-w-none sm:text-sm">
+                    {statusText}
                   </div>
                 </div>
                 <Cpu className="size-5 animate-spin text-[#3DDCFF]" style={{ animationDuration: "4s" }} />
               </div>
 
-              <div className="mt-2 grid grid-cols-2 gap-3">
+              <div className="mt-1 grid grid-cols-2 gap-3">
                 <div
                   className={`rounded-xl border p-3 transition-all duration-500 ${
                     hazardCount > 0 ? "border-[#FF2A3F]/40 bg-[#FF2A3F]/15" : "border-[#3DDCFF]/10 bg-[#3DDCFF]/5"
@@ -365,14 +497,14 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="absolute -right-4 top-0 flex items-center gap-1.5 rounded border border-[#3DDCFF]/40 bg-[#3DDCFF]/15 px-3 py-1.5 text-[10px] font-mono text-[#3DDCFF] shadow-[0_0_15px_rgba(0,0,0,0.5)] backdrop-blur-md">
+          <div className="absolute -top-3 right-3 hidden items-center gap-1.5 rounded border border-[#3DDCFF]/40 bg-[#3DDCFF]/15 px-3 py-1.5 text-[10px] font-mono text-[#3DDCFF] shadow-[0_0_15px_rgba(0,0,0,0.5)] backdrop-blur-md sm:flex">
             <div className="size-1.5 animate-pulse rounded-full bg-[#3DDCFF]" />
             {isInterior ? "MICRO-SCAN" : "MACRO-SCAN"}
           </div>
         </div>
 
         <div
-          className="inspect-animate-fade-up absolute bottom-6 left-6 text-[10px] font-mono uppercase tracking-widest text-gray-500 sm:bottom-10 sm:left-10 lg:bottom-12 lg:left-16"
+          className="inspect-animate-fade-up absolute bottom-4 left-4 hidden text-[10px] font-mono uppercase tracking-widest text-gray-500 sm:bottom-10 sm:left-10 sm:block lg:bottom-12 lg:left-16"
           style={{ animationDelay: "400ms" }}
         >
           LATENCY: 12MS // PROTOCOL: {isInterior ? "INDOOR_MAPPING" : "EXTERIOR_SYNC"}
@@ -380,9 +512,10 @@ export default function HomePage() {
       </div>
 
       {activeMode ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center p-3 sm:p-4 lg:justify-start lg:px-16 lg:pb-8">
-          <div className="pointer-events-auto w-full max-w-3xl overflow-hidden rounded-[28px] border border-white/10 bg-[#0b1220]/92 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4 sm:px-6">
+        <div className="pointer-events-none fixed inset-0 z-40 flex items-start justify-center overflow-y-auto p-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4 lg:items-end lg:justify-start lg:px-16 lg:pb-8">
+          <div className="pointer-events-auto flex max-h-[calc(100dvh-1rem)] w-full max-w-3xl flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[#0b1220]/92 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl sm:max-h-[calc(100dvh-2rem)] lg:max-h-[min(86dvh,880px)]">
+            <div className="shrink-0 border-b border-white/10 px-5 py-4 sm:px-6">
+              <div className="flex items-start justify-between gap-4">
               <div className="space-y-1">
                 <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-[#3DDCFF]">
                   {activeMode === "live" ? "LIVE INTAKE" : "MANUAL INTAKE"}
@@ -402,9 +535,10 @@ export default function HomePage() {
               >
                 <X className="size-5" />
               </Button>
+              </div>
             </div>
 
-            <div className="max-h-[68vh] space-y-5 overflow-y-auto px-5 py-5 sm:px-6">
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-6">
               <div className="grid gap-4 md:grid-cols-[1.15fr_0.85fr]">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
@@ -642,7 +776,8 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 border-t border-white/10 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <div className="shrink-0 border-t border-white/10 px-5 py-4 sm:px-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-xs uppercase tracking-[0.18em] text-slate-500">
                 {activeMode === "live" ? "Ready for guided radar scan" : "Ready for manual photo upload"}
               </div>
@@ -659,6 +794,7 @@ export default function HomePage() {
                   <Scan className="mr-2 size-4" />
                   Start Live Scan
                 </Button>
+              </div>
               </div>
             </div>
           </div>

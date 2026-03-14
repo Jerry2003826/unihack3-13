@@ -784,19 +784,19 @@ export default function ReportPage() {
   }
 
   return (
-    <main className="min-h-screen bg-background px-4 pb-20 pt-6 sm:px-6">
+    <main className="min-h-screen bg-background px-3 pb-24 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6 sm:pb-20 sm:pt-6">
       <div ref={reportContentRef} className="mx-auto flex max-w-6xl flex-col gap-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-3">
             <div className="flex flex-wrap gap-2" data-export-ignore="true">
-              <Button variant="ghost" size="sm" onClick={() => router.push("/")}>
+              <Button variant="ghost" size="sm" className="h-9" onClick={() => router.push("/")}>
                 <ArrowLeft className="mr-1 size-4" />
                 Back Home
               </Button>
-              <Button variant="outline" size="sm" onClick={() => router.push("/compare")}>
+              <Button variant="outline" size="sm" className="h-9" onClick={() => router.push("/compare")}>
                 Saved Reports / Compare
               </Button>
-              <Button variant="outline" size="sm" onClick={() => router.push("/history")}>
+              <Button variant="outline" size="sm" className="h-9" onClick={() => router.push("/history")}>
                 Search History
               </Button>
             </div>
@@ -821,7 +821,7 @@ export default function ReportPage() {
 
           <div
             data-export-ignore="true"
-            className="flex flex-col items-start gap-2 rounded-2xl border border-border/70 bg-card/70 px-4 py-3 text-sm text-muted-foreground"
+            className="flex w-full flex-col items-start gap-2 rounded-2xl border border-border/70 bg-card/70 px-4 py-3 text-sm text-muted-foreground sm:w-auto"
           >
             <AsyncStatusBadge label="Deep intelligence" status={deepStatus} />
             <AsyncStatusBadge label="Recommendation" status={recommendationStatus} />
@@ -1589,7 +1589,7 @@ export default function ReportPage() {
             <ShieldAlert className="size-4 text-accent" />
             Disclaimer
           </div>
-          Inspect.AI is an AI-assisted screening tool and does not replace a licensed building inspector. All
+          RentRadar is an AI-assisted screening tool and does not replace a licensed building inspector. All
           findings and cost estimates are indicative only.
         </div>
       </div>

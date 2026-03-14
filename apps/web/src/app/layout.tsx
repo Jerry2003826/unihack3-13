@@ -21,7 +21,7 @@ const monoFont = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Inspect.AI",
+  title: "RentRadar",
   description: "AI-assisted rental property risk scanner and decision assistant.",
 };
 

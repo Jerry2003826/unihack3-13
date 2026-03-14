@@ -172,7 +172,7 @@ export async function exportReportPoster({ reportNode, snapshot }: ExportNodeOpt
 
   ctx.fillStyle = "#E7ECF3";
   ctx.font = "700 62px 'Space Grotesk', sans-serif";
-  ctx.fillText("Inspect.AI", 72, 112);
+  ctx.fillText("RentRadar", 72, 112);
 
   ctx.font = "500 34px 'Manrope', sans-serif";
   ctx.fillStyle = "#95A0B7";

@@ -1,7 +1,7 @@
-# Inspect.AI Web App
+# RentRadar Web App
 
-中文：这是 Inspect.AI 的前端应用，基于 `Next.js + React + Tailwind CSS`。  
-English: This is the Inspect.AI frontend app, built with `Next.js + React + Tailwind CSS`.
+中文：这是 RentRadar 的前端应用，基于 `Next.js + React + Tailwind CSS`。  
+English: This is the RentRadar frontend app, built with `Next.js + React + Tailwind CSS`.
 
 ## This package contains
 

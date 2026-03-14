@@ -469,8 +469,8 @@ export default function ManualPage() {
   };
 
   return (
-    <div className="mx-auto min-h-screen max-w-2xl bg-background p-4 pb-20">
-      <div className="mb-6 flex items-center gap-4 pt-4">
+    <div className="mx-auto min-h-screen max-w-2xl bg-background px-3 pb-24 pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4 sm:pb-20">
+      <div className="mb-6 flex items-center gap-3 pt-2 sm:gap-4 sm:pt-4">
         <Button variant="ghost" size="sm" onClick={() => router.push("/")}>
           &larr; Back
         </Button>
@@ -484,7 +484,7 @@ export default function ManualPage() {
             <CardDescription>Upload 1 to 8 photos for hazard analysis.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="mb-4 grid grid-cols-4 gap-2">
+            <div className="mb-4 grid grid-cols-3 gap-2 sm:grid-cols-4">
               {previewUrls.map((url, idx) => (
                 <div key={url} className="group relative aspect-square overflow-hidden rounded-md border border-border bg-muted">
                   <Image src={url} alt={`Preview ${idx}`} fill unoptimized className="object-cover" />
@@ -705,14 +705,16 @@ export default function ManualPage() {
           </CardContent>
         </Card>
 
-        <Button
-          size="lg"
-          className="w-full bg-accent text-accent-foreground shadow-lg shadow-accent/20 hover:bg-accent/90"
-          disabled={isSubmitting}
-          onClick={handleGenerateReport}
-        >
-          {isSubmitting ? progressMsg : "Generate Report"}
-        </Button>
+        <div className="sticky bottom-3 z-20 rounded-2xl border border-border/60 bg-background/92 p-2 backdrop-blur sm:static sm:border-0 sm:bg-transparent sm:p-0">
+          <Button
+            size="lg"
+            className="w-full bg-accent text-accent-foreground shadow-lg shadow-accent/20 hover:bg-accent/90"
+            disabled={isSubmitting}
+            onClick={handleGenerateReport}
+          >
+            {isSubmitting ? progressMsg : "Generate Report"}
+          </Button>
+        </div>
       </div>
     </div>
   );

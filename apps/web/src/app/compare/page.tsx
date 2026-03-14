@@ -188,9 +188,9 @@ export default function ComparePage() {
   }
 
   return (
-    <main className="min-h-screen bg-background px-4 py-6 sm:px-6">
+    <main className="min-h-screen bg-background px-4 pb-8 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6 sm:py-6">
       <div className="mx-auto flex max-w-6xl flex-col gap-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
           <div className="space-y-2">
             <div className="text-xs uppercase tracking-[0.2em] text-accent/80">Saved Reports / Compare</div>
             <h1 className="text-3xl font-semibold tracking-tight text-foreground">Multi-property weighted recommendation</h1>
@@ -198,11 +198,11 @@ export default function ComparePage() {
               Select up to five saved report snapshots, adjust the factor weights, and generate a ranked recommendation.
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => router.push("/history")}>
+          <div className="grid grid-cols-2 gap-2 sm:flex">
+            <Button variant="outline" className="w-full sm:w-auto" onClick={() => router.push("/history")}>
               Search History
             </Button>
-            <Button variant="ghost" onClick={() => router.push("/")}>
+            <Button variant="ghost" className="w-full sm:w-auto" onClick={() => router.push("/")}>
               Back Home
             </Button>
           </div>

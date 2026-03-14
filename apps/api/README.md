@@ -1,7 +1,7 @@
-# Inspect.AI API App
+# RentRadar API App
 
-中文：这是 Inspect.AI 的 API 应用，基于 `Next.js Route Handlers`。  
-English: This is the Inspect.AI API app, implemented with `Next.js Route Handlers`.
+中文：这是 RentRadar 的 API 应用，基于 `Next.js Route Handlers`。  
+English: This is the RentRadar API app, implemented with `Next.js Route Handlers`.
 
 ## This package contains
 
