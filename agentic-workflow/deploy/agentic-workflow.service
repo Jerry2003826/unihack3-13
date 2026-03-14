@@ -1,0 +1,29 @@
+[Unit]
+Description=Agentic Workflow Agent – Elastic-themed AI ops agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/agentic-workflow
+EnvironmentFile=/opt/agentic-workflow/.env
+
+ExecStartPre=/opt/agentic-workflow/.venv/bin/python -m agentic_workflow_agent.cli bootstrap-indices
+ExecStart=/opt/agentic-workflow/entrypoint.sh
+
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/opt/agentic-workflow/.venv/bin:/usr/local/bin:/usr/bin:/bin
+Environment=RUN_MODE=loop
+Environment=BOOTSTRAP_ON_START=false
+Environment=LOOP_INTERVAL_SECONDS=3600
+
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=agentic-workflow
+
+[Install]
+WantedBy=multi-user.target

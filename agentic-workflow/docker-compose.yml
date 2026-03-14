@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agentic-workflow-agent
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - RUN_MODE=${RUN_MODE:-loop}
+      - BOOTSTRAP_ON_START=${BOOTSTRAP_ON_START:-true}
+      - LOAD_DEMO_DATA=${LOAD_DEMO_DATA:-false}
+      - LOOP_INTERVAL_SECONDS=${LOOP_INTERVAL_SECONDS:-3600}
+      - WORKFLOW_FILE=${WORKFLOW_FILE:-workflows/ubuntu_auto_ops.yaml}
+      - WORKFLOW_INPUT=${WORKFLOW_INPUT:-Perform a full system health check and auto-remediate any issues found.}
+    volumes:
+      - agent-logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+volumes:
+  agent-logs:
