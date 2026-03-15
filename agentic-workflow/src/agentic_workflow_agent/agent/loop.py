@@ -8,6 +8,7 @@ from typing import Iterable
 
 from agentic_workflow_agent.agent.prompts import SYSTEM_PROMPT
 from agentic_workflow_agent.agent.tools import StructuredTool, tool_schemas
+from agentic_workflow_agent.agent.safe_ops import AuditLog
 from agentic_workflow_agent.llm.client import ChatModelClient
 from agentic_workflow_agent.schemas import AgentRunResult, ChatMessage, ToolResult
 from agentic_workflow_agent.tracing import TraceWriter
@@ -22,6 +23,7 @@ class AgentLoop:
     max_iterations: int = 6
     system_prompt: str = SYSTEM_PROMPT
     tracer: TraceWriter = field(default_factory=TraceWriter)
+    safe_ops_audit: AuditLog = field(default_factory=AuditLog)
 
     def run(self, user_input: str, history: Iterable[ChatMessage] | None = None) -> AgentRunResult:
         transcript = list(history or [])
@@ -44,6 +46,7 @@ class AgentLoop:
                     iterations=iteration,
                     transcript=transcript,
                     tool_results=tool_results,
+                    audit_log=[e.to_dict() for e in self.safe_ops_audit.entries],
                 )
             transcript.append(response.assistant_message)
 
@@ -71,6 +74,7 @@ class AgentLoop:
                     iterations=iteration,
                     transcript=transcript,
                     tool_results=tool_results,
+                    audit_log=[e.to_dict() for e in self.safe_ops_audit.entries],
                 )
 
         fallback = (
@@ -83,6 +87,7 @@ class AgentLoop:
             iterations=self.max_iterations,
             transcript=transcript,
             tool_results=tool_results,
+            audit_log=[e.to_dict() for e in self.safe_ops_audit.entries],
         )
 
     def _execute_tool(self, name: str, arguments: dict[str, object]) -> str:

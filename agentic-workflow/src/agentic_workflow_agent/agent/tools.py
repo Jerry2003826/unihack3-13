@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from agentic_workflow_agent.config import Settings
 from agentic_workflow_agent.elastic.search import SearchMode
+from agentic_workflow_agent.agent.safe_ops import SafeOpsGate, AuditLog, PermissionLevel
 
 
 class SearchRuntime(Protocol):
@@ -66,6 +67,7 @@ class StructuredTool:
     description: str
     input_model: type[BaseModel]
     handler: Callable[[Any], str]
+    permission_level: str = "READ_ONLY"
 
     def openai_schema(self) -> dict[str, object]:
         return {
@@ -107,14 +109,15 @@ def build_default_tools(
     search_service: SearchRuntime,
     store: DocumentRuntime,
     kibana_client: KibanaRuntime | None = None,
+    safe_ops_gate: SafeOpsGate | None = None,
 ) -> dict[str, StructuredTool]:
+    gate = safe_ops_gate or SafeOpsGate()
+
     def search_web_ddg(payload: WebSearchInput) -> str:
         import urllib.request
         import urllib.parse
         import json
         
-        # Using a simple DuckDuckGo HTML scrape or an open API for demo purposes without requiring a key
-        # We will use DuckDuckGo Lite HTML interface to extract search result snippets
         try:
             query = urllib.parse.quote(payload.query)
             url = f"https://html.duckduckgo.com/html/?q={query}"
@@ -125,11 +128,9 @@ def build_default_tools(
             with urllib.request.urlopen(req, timeout=10) as response:
                 html = response.read().decode('utf-8')
             
-            # Very basic extraction of result snippets
             results = []
             parts = html.split('class="result__snippet')
             for part in parts[1:]:
-                # Extract text between > and <
                 snippet_start = part.find('>') + 1
                 snippet_end = part.find('</a>', snippet_start)
                 if snippet_end == -1:
@@ -137,7 +138,6 @@ def build_default_tools(
                 
                 if snippet_start != 0 and snippet_end != -1:
                     snippet = part[snippet_start:snippet_end].strip()
-                    # Clean basic HTML tags
                     snippet = snippet.replace('<b>', '').replace('</b>', '')
                     if snippet and snippet not in results:
                         results.append(snippet)
@@ -152,26 +152,22 @@ def build_default_tools(
             return f"Web search failed: {str(e)}"
 
     def execute_bash_command(payload: BashCommandInput) -> str:
-        import subprocess
-        try:
-            result = subprocess.run(
-                payload.command,
-                shell=True,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=30,
+        """Route through SafeOps gate instead of direct subprocess."""
+        result = gate.evaluate(payload.command)
+
+        if result.needs_verification:
+            # For MODIFY-level commands: return dry-run info.
+            # The agent loop will handle the verification LLM call.
+            return (
+                f"[SafeOps DRY-RUN] Command requires self-verification before execution.\n"
+                f"Command: {payload.command}\n"
+                f"Analysis: {result.dry_run_description}\n"
+                f"Rollback available: {result.audit_entry.rollback_command or 'None'}\n"
+                f"\nTo proceed, call execute_bash_command again with the SAME command. "
+                f"The SafeOps gate will execute it after verification."
             )
-            output = result.stdout
-            if result.stderr:
-                output += f"\n[STDERR]:\n{result.stderr}"
-            if result.returncode != 0:
-                output += f"\n[EXIT CODE]: {result.returncode}"
-            return output if output.strip() else "Command executed successfully with no output."
-        except subprocess.TimeoutExpired:
-            return f"Command timed out after 30 seconds: {payload.command}"
-        except Exception as e:
-            return f"Error executing command: {str(e)}"
+
+        return result.output
 
     def fetch_system_logs(payload: SystemLogsInput) -> str:
         import subprocess

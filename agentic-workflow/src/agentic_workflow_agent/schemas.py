@@ -66,3 +66,4 @@ class AgentRunResult(BaseModel):
     iterations: int
     transcript: list[ChatMessage]
     tool_results: list[ToolResult] = Field(default_factory=list)
+    audit_log: list[dict[str, Any]] = Field(default_factory=list)

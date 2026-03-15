@@ -784,7 +784,44 @@ Modules with deepest unit coverage: `scoring.ts` (weighted penalty calculation, 
 - **Load testing:** Verify rate limit behavior under concurrent users. Current limits are based on Gemini API quotas, not empirical server capacity.
 - **RAG retrieval quality metrics:** Compute MRR@5 and NDCG@5 on a query set against the knowledge base to validate chunk size and overlap parameters.
 
-## 17. Project Timeline
+## 17. SafeOps Execution Framework
+
+> **Anti-hallucination security layer** — prevents the LLM from causing real damage by enforcing policy gates, dry-run simulation, and self-verification before every destructive action.
+
+### State Machine
+
+Every bash command follows this execution flow:
+
+```
+PROPOSED → CLASSIFIED → DRY_RUN → SELF_VERIFIED → EXECUTING → POST_CHECK → COMPLETED / ROLLED_BACK
+```
+
+At any stage, a command can be `REJECTED` with a structured reason.
+
+### 3-Tier Permission System
+
+| Level | Examples | Behavior |
+|-------|---------|----------|
+| **READ_ONLY** | `df -h`, `cat`, `journalctl`, `systemctl status` | Execute immediately, no gate |
+| **MODIFY** | `systemctl restart`, `apt install`, `ufw allow` | Dry-run → LLM self-verification → execute |
+| **DANGEROUS** | `rm -rf /`, `dd`, `mkfs`, `reboot`, fork bombs | Automatically **BLOCKED** |
+
+### Key Features
+
+- **Command Whitelist / Blacklist** — 40+ read-only prefixes, 20+ modify prefixes, 18 blacklist regex patterns
+- **Dry-Run Simulation** — generates human-readable impact descriptions before execution
+- **LLM Self-Verification** — model must explicitly confirm `YES` before any state-changing command
+- **Auto-Rollback Registry** — 9 rollback patterns (e.g., `systemctl stop X` → `systemctl start X`). If post-execution health check fails, undo is automatic
+- **Structured Audit Log** — every operation (proposed / approved / executed / rolled back) produces a JSON audit entry with timestamp, permission level, dry-run result, and execution output
+- **Unknown Command Protection** — any unrecognized command defaults to `DANGEROUS` and is blocked
+
+### Test Coverage
+
+35 unit tests covering command classification (30 parameterized cases), rollback derivation, dry-run descriptions, gate state machine integration, audit logging, and verification prompt building.
+
+> **Source:** `agentic-workflow/src/agentic_workflow_agent/agent/safe_ops.py`
+
+## 18. Project Timeline
 
 | Date | Milestone |
 |------|-----------|
