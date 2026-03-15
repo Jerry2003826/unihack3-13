@@ -1,9 +1,11 @@
 # RentRadar
 
+[![CI](https://github.com/Jerry2003826/unihack3-13/actions/workflows/ci.yml/badge.svg)](https://github.com/Jerry2003826/unihack3-13/actions/workflows/ci.yml)
 [![API Health](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2F170-64-160-8.sslip.io%2Fapi%2Fhealth&query=%24.status&label=API%20Health&color=brightgreen&style=flat-square)](https://170-64-160-8.sslip.io/api/health)
 [![Built in 3 Days](https://img.shields.io/badge/Built%20in-3%20Days-blueviolet?style=flat-square)](#17-project-timeline)
-[![Tests](https://img.shields.io/badge/Tests-22%20passed-brightgreen?style=flat-square)](#167-test-coverage)
+[![Tests](https://img.shields.io/badge/Tests-22%20passed-brightgreen?style=flat-square)](#168-test-coverage)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
+
 
 RentRadar is an AI-assisted rental inspection and decision-support system. It combines live scan guidance, image analysis, location intelligence, pre-lease advice, multi-property comparison, approximate 3D room views, exportable reports, and an autonomous server-ops agent in one monorepo.
 
