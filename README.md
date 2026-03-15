@@ -12,6 +12,7 @@ RentRadar is an AI-assisted rental inspection and decision-support system. It co
 - **Multi-Property Compare** — weighted scoring across budget, commute, noise, lighting, condition, agency, and community
 - **History** — local IndexedDB persistence of past searches and comparisons
 - **Knowledge Base** — RAG-enhanced rental advice powered by Cohere + Qdrant
+- **Smart Gateway** — dynamic model routing that lets Gemini Flash automatically escalate overwhelmingly complex tasks (like rigorous math proofs or deep logical reasoning) to Gemini Pro invisibly
 - **Autonomous Server Ops Agent** — a continuously running AI workflow that monitors, diagnoses, and self-heals the production server (see [Section 12](#12-autonomous-server-ops-agent))
 
 ## 2. Tech Stack
@@ -347,9 +348,18 @@ docker run -d \
 | Community research | Gemini 2.5 Flash | Search grounding | Multi-pass search |
 | Agency background | Gemini 2.5 Flash | Search grounding | Multi-pass search |
 | Knowledge Base RAG | Cohere Embed | Cohere Rerank | Specialized embedding/ranking |
+| Smart Gateway (Routing) | Gemini 2.5 Flash | Gemini 2.5 Pro | Flash acts as an evaluator and automatically escalates strict JSON schemas to Pro if a prompt is too difficult to answer directly |
 | Answer generation | Gemini 2.5 Flash | Local fallback | Cost/quality balance |
 | Voice synthesis | MiniMax TTS | — | English expressive narration |
 | Server ops | GLM-5 via apiyi.com | Retry with backoff | Tool-calling capable |
+
+### Core Gateway Mechanics
+
+The **Smart Gateway** relies on a robust schema-wrapping mechanism instead of native tool calling (which conflicted with strict JSON parsing).
+1. We inject an optional `_escalateToPro: boolean` into the requested target Zod schema.
+2. The `gemini-2.5-flash` model evaluates if the query is too complex (e.g. requires advanced multi-step proofs).
+3. If it is complex, it outputs only the `_escalateToPro: true` flag natively as JSON.
+4. Our AI interceptor reads this raw JSON flag natively and seamlessly forwards the exact prompt to `gemini-2.5-pro` (`GEMINI_REASONING_MODEL`), without ever breaking strict type validation.
 
 ### Prompt Engineering
 
