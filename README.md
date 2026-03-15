@@ -848,6 +848,9 @@ Result Fusion → deduplicate matches → Gemini synthesis → unified answer
 
 **POST** `/api/knowledge/plan` — rate-limited at 20 req/min.
 
+> [!NOTE]
+> Due to hardware limitations of the free-tier cloud service, the RAG pipeline (embedding → vector search → rerank → generation) may load slower than expected on first invocation. Subsequent requests are significantly faster thanks to warm caching.
+
 > **Source:** `apps/api/src/lib/knowledge/retrievalPlanner.ts`
 
 ## 19. Project Timeline
