@@ -821,7 +821,36 @@ At any stage, a command can be `REJECTED` with a structured reason.
 
 > **Source:** `agentic-workflow/src/agentic_workflow_agent/agent/safe_ops.py`
 
-## 18. Project Timeline
+## 18. Retrieval Planner for Rental Intelligence
+
+> **Multi-strategy RAG** — decomposes free-form queries into typed sub-questions, routes each to an optimal retrieval strategy, executes in parallel, and fuses the results.
+
+### How It Works
+
+```
+User query → Gemini Query Decomposer → 1–5 typed sub-questions
+  ├── defect       → KB RAG (top_k=5, rerank=on)
+  ├── regulation   → KB RAG (top_k=3, tag-filtered: regulation/legal)
+  ├── neighborhood → KB RAG (top_k=4, tag-boosted: noise/safety/location)
+  └── agency       → KB RAG (top_k=3, tag-filtered: agency/landlord)
+         ↓ Promise.allSettled (parallel)
+Result Fusion → deduplicate matches → Gemini synthesis → unified answer
+```
+
+### Key Design Decisions
+
+- **Query decomposition via Gemini** — a single complex query like *"cracked walls, noisy area, unreliable agent?"* is split into 3 independent retrieval tasks, each with optimal parameters
+- **Category-specific strategies** — defect queries use high top_k with rerank for comprehensive coverage; regulation queries use strict tag filtering for precision
+- **Graceful degradation** — if Gemini decomposition fails, falls back to single-query mode; if RAG fails, falls back to local keyword search
+- **Conflict detection** — the fusion layer identifies contradictions across sub-question answers
+
+### API
+
+**POST** `/api/knowledge/plan` — rate-limited at 20 req/min.
+
+> **Source:** `apps/api/src/lib/knowledge/retrievalPlanner.ts`
+
+## 19. Project Timeline
 
 | Date | Milestone |
 |------|-----------|

@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 - **SafeOps Execution Framework** — anti-hallucination security layer: 3-tier command permissions (READ_ONLY / MODIFY / DANGEROUS), command whitelist/blacklist (18 regex patterns), dry-run simulation, LLM self-verification gate, auto-rollback registry (9 patterns), structured audit logging, and state-machine driven execution (`safe_ops.py`, 35 unit tests)
+- **Retrieval Planner for Rental Intelligence** — multi-strategy RAG with Gemini-powered query decomposition (defect/regulation/neighborhood/agency), per-category retrieval strategies (variable top_k, tag filtering, rerank), parallel execution via `Promise.allSettled`, and Gemini-driven result fusion with conflict detection (`retrievalPlanner.ts`, `/api/knowledge/plan`)
 - **Smart Gateway** — dynamic model routing lets Gemini Flash automatically escalate complex tasks to Gemini Pro via schema-wrapping technique (`ai.ts`)
 - **Autonomous Server Ops Agent** — Python-based agentic workflow deployed via systemd; first auto-remediation detected SSH brute-force attacks and installed fail2ban + UFW + SSH hardening within minutes of deployment
 - **i18n / Translation endpoint** — `/api/translate` for multi-language report support
