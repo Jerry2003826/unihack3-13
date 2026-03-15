@@ -66,11 +66,11 @@
   --border: rgb(231 236 243 / 12%);
   --input: rgb(231 236 243 / 14%);
   --ring: rgb(61 220 255 / 55%);
-  --chart-1: oklch(0.809 0.105 251.813);
-  --chart-2: oklch(0.623 0.214 259.815);
-  --chart-3: oklch(0.546 0.245 262.881);
-  --chart-4: oklch(0.488 0.243 264.376);
-  --chart-5: oklch(0.424 0.199 265.638);
+  --chart-1: #76b8d6;
+  --chart-2: #3d6fc7;
+  --chart-3: #2a56b8;
+  --chart-4: #1e45a8;
+  --chart-5: #163589;
   --radius: 0.625rem;
   --sidebar: #121826;
   --sidebar-foreground: #e7ecf3;
