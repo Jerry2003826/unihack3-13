@@ -50,9 +50,9 @@ import { toast } from "sonner";
 const RECOMMENDATION_FALLBACK =
   "Recommendation unavailable. Proceed with a standard inspection checklist before signing.";
 const RECOMMENDATION_FALLBACK_NOTICE =
-  "Using a concise fallback recommendation while the full structured advice is unavailable.";
+  "Full recommendation is loading in the background. Local analysis is ready.";
 const DEEP_INTELLIGENCE_FALLBACK_NOTICE =
-  "Using a shorter background summary for now. Core risk and action guidance are still available.";
+  "Background intelligence is taking longer than usual on our free cloud service. Core analysis is ready.";
 
 function isValidReportId(value: string) {
   return /^[a-zA-Z0-9-]{8,128}$/.test(value);
@@ -420,7 +420,7 @@ export default function ReportPage() {
           const intelligenceResponse = await fetchJsonWithTimeout<IntelligenceResponse>({
             url: resolveApiUrl("/api/intelligence"),
             signal: controller.signal,
-            timeoutMs: 20_000,
+            timeoutMs: 45_000,
             body: {
               inspectionMode: currentSnapshot.inputs.mode,
               depth: "full",
@@ -454,7 +454,7 @@ export default function ReportPage() {
         const recommendationResponse = await fetchJsonWithTimeout<NegotiateResponse>({
           url: resolveApiUrl("/api/negotiate"),
           signal: controller.signal,
-          timeoutMs: 20_000,
+          timeoutMs: 30_000,
           body: {
             inspectionMode: currentSnapshot.inputs.mode,
             hazards: currentSnapshot.hazards,
@@ -487,7 +487,7 @@ export default function ReportPage() {
         await applyRecommendationFallback(latestIntelligence ?? currentSnapshot.intelligence);
         setRecommendationStatus("fallback");
         setLazyError(RECOMMENDATION_FALLBACK_NOTICE);
-        toast.info("Using concise fallback guidance while the full recommendation is unavailable.");
+        toast.info("Using local analysis while full recommendation loads.");
         console.warn("Recommendation fallback", error);
       }
     }
