@@ -562,13 +562,129 @@ Playwright: full user flows, cross-page state, responsive layout.
 3. Use `callGemini` or `callGeminiJson` for model calls
 4. Return structured results
 
-## 16. Project Timeline
+## 16. Engineering Deep-Dive: What We Actually Built and Why
+
+> This section explains the hard technical decisions, failure modes we handled, and measured performance — not just what features exist, but **why they work the way they do**.
+
+### 16.1 Why Multi-Model Routing (Smart Gateway)
+
+**Problem:** Gemini 2.5 Flash is fast and cheap but occasionally produces shallow or incorrect answers on complex reasoning tasks (e.g., multi-step risk analysis, legal clause interpretation). Gemini 2.5 Pro is more capable but 3–5× slower and more expensive.
+
+**Why not just use Pro everywhere?** Cost and latency. A single live scan session fires ~60 vision calls/min. At Pro pricing, this becomes economically unsustainable. Flash handles 95%+ of queries adequately.
+
+**Our solution — Schema-Wrapping Gateway:**
+- We inject an optional `_escalateToPro: boolean` into every Zod schema sent to Flash.
+- Flash evaluates its own confidence. If overwhelmed, it sets the flag instead of guessing.
+- Our interceptor detects this via raw `JSON.parse` (not Zod — to avoid validation crashes on incomplete schemas) and transparently re-routes to Pro.
+- The escalation path gets a 1.5× timeout budget (30s vs 20s default) to accommodate Pro's longer thinking time.
+
+**Why not use Gemini's native tool calling for this?** We tried. The Gemini API throws `ApiError: Function calling with a response mime type: 'application/json' is unsupported`. Tool calling and strict JSON mode are mutually exclusive. Schema wrapping bypasses this entirely.
+
+**Hard lesson learned:** The `zod-to-json-schema` library silently outputs `{}` in monorepo environments due to multiple Zod `instanceof` chains. We wrote a custom `createGeminiSchema()` mapper using stable `constructor.name` lookups to guarantee correct schema translation across all deployment targets.
+
+### 16.2 Why This RAG Architecture
+
+**Problem:** Tenants need actionable rental advice grounded in Australian tenancy law and best practices, but Gemini hallucinates legal advice when unconstrained.
+
+**Why Cohere + Qdrant instead of just prompting Gemini?**
+- Gemini has no guaranteed access to niche Australian rental law documents.
+- RAG lets us control exactly which knowledge the model can cite — no hallucinated legal references.
+- Cohere's `embed-english-v3` + `rerank-v4.0-pro` consistently outperformed Gemini's own embedding on our domain-specific content in informal testing.
+
+**Pipeline details:**
+- **Chunking:** 420-char sliding window with 80-char overlap, sentence-boundary-aware splitting (not naive character slicing).
+- **Retrieval:** Dense vector search via Qdrant, top-12 candidates → Cohere rerank → top-K (configurable, default 5).
+- **Generation:** Gemini Flash with strict `knowledgeAnswerSchema` enforcement (summary ≤180 chars, 2–4 key points ≤120 chars each, confidence rating).
+
+**Fallback chain (3 layers):**
+1. RAG runtime missing (no Qdrant/Cohere keys) → falls back to keyword-based local search over cached knowledge docs.
+2. Rerank fails → uses raw retrieval scores, continues pipeline.
+3. Answer generation fails → returns pre-built fallback answer from matched snippets with `confidence: "low"`.
+
+### 16.3 Handling Structured Output Failures
+
+Every AI call goes through `callGeminiJson()` which enforces strict `responseMimeType: "application/json"` + `responseJsonSchema`. But models still fail:
+
+| Failure Mode | How We Handle It | Where |
+|---|---|---|
+| Model returns empty text | `throw Error("empty response")` → caught by caller, returns `fallbackReason` | `ai.ts:L69-71` |
+| JSON doesn't match Zod schema | `schema.parse()` throws → caller catches, returns degraded result | Every agent |
+| Model times out | `withTimeout()` wrapper rejects after deadline → caller returns fallback | All AI calls |
+| Gateway escalation JSON incomplete | Native `JSON.parse` + property check (not Zod) avoids crash | `ai.ts:L108-111` |
+| Vision analysis fails entirely | Returns `{ hazards: [], fallbackReason: "gemini_analyze_failed" }` | `geminiService.ts:L103-111` |
+
+**Design principle:** No single AI failure should crash the request. Every agent function returns a typed result with an optional `fallbackReason` field, letting the UI render partial data with appropriate caveats.
+
+### 16.4 Rate Limiting and Latency Budgets
+
+**Server-side rate limits (per-endpoint, in-memory sliding window):**
+
+| Endpoint | Rate Limit | Timeout Budget |
+|---|---|---|
+| `/api/analyze/live` (live scan) | 60 req / 60s | 25s (vision) |
+| `/api/analyze` (manual upload) | 45 req / 60s | 25s |
+| `/api/intelligence` | 12 req / 60s | 10–18s (parallel agents) |
+| `/api/negotiate` | 8 req / 60s | 8s |
+| `/api/knowledge/query` | 30 req / 60s | 9s (RAG generation) |
+| `/api/listing/discover` | 12 req / 120s | 7s |
+| `/api/listing/extract` | 10 req / 120s | 8–12s |
+| `/api/compare` | 12 req / 60s | — |
+| `/api/tts/alert` | 20 req / 60s | 10s |
+| `/api/maps/static` | 18 req / 60s | 10s |
+| `/api/scan/3d/reconstruct` | 12 req / 60s | 8–14s |
+
+All rate-limited endpoints return `429 + Retry-After` when exhausted. Smart Gateway escalation adds 1.5× to the base timeout for Pro calls.
+
+### 16.5 Hazard Detection: False Positive / False Negative Handling
+
+**The core challenge:** Vision models over-detect (false positives) and occasionally miss subtle issues (false negatives).
+
+**Strategies implemented:**
+- **Severity gating:** Only `Critical` and `High` severity observations trigger automatic recording during live scan. `Medium` and `Low` are displayed as guidance but not persisted without user confirmation.
+- **Bounding-box IoU confirmation:** Live observations must appear in ≥2 consecutive focused frames with IoU (Intersection-over-Union) overlap ≥ threshold before being confirmed as a real hazard. This eliminates transient false positives from motion blur or lighting changes.
+- **Multi-image deduplication:** Manual upload mode runs `dedupeHazards()` across all photos to merge duplicate findings (e.g., the same crack photographed from two angles).
+- **Constraint injection:** Prompts explicitly state: _"Detect visible issues only. Do not infer hidden problems without image evidence."_ and _"Do not mention image quality, model uncertainty, coordinates, or technical scanning terms."_ This reduces speculative false positives.
+- **4-tier severity system:** `Critical > High > Medium > Low`, each with weighted penalty scores for the overall risk scoring algorithm.
+
+### 16.6 Observed Performance (Informal Benchmarks)
+
+> These are real-world observations from development and production testing, not formal benchmarks with statistical rigor.
+
+| Metric | Observed Value | Notes |
+|---|---|---|
+| Single image analysis (Flash) | 2–4s | 1 image, manual upload path |
+| Multi-image analysis (4 photos) | 4–8s | Parallel base64 fetch + single model call |
+| Live frame analysis | 1.5–3s | Optimized prompt, single frame |
+| Intelligence report (4 agents parallel) | 6–12s | `Promise.allSettled` across geo/community/agency/search |
+| Full report generation | 8–15s | Progressive enhancement, modules load independently |
+| Knowledge base RAG query | 1.5–3s | Embed + Qdrant search + rerank + generation |
+| Smart Gateway escalation overhead | +3–8s | Pro model thinking time on complex queries |
+| 3D room reconstruction | 10–20s | 3–8 photos → per-image analysis → multi-view fusion → scene synthesis |
+
+### 16.7 Test Coverage
+
+| Layer | Test Files | Modules Covered |
+|---|---|---|
+| **Unit (Vitest)** | 19 | Scoring, checklist prefill, live guidance, live room state, live scan, location, history store, report snapshots, 3D room scenes, room hazards, knowledge query, search relevance, comparison, report display, config, page render |
+| **E2E (Playwright)** | 3 | Demo smoke, manual upload smoke, comparison smoke |
+| **Total** | **22** | Across `apps/web`, `apps/api`, `packages/contracts`, `tests/e2e` |
+
+Modules with deepest unit coverage: `scoring.ts` (weighted penalty calculation, verdict derivation), `liveScan.ts` (IoU computation, focus confirmation, alert key deduplication), `liveRoomState.ts` (room state machine transitions).
+
+### 16.8 What Would Improve with More Time
+
+- **Formal precision/recall evaluation:** Run a labeled dataset of 200+ rental photos through the hazard detector and compute per-category precision/recall. Currently we rely on qualitative spot-checking.
+- **A/B testing the Smart Gateway threshold:** The `_escalateToPro` decision is currently model-subjective. A calibration dataset would let us measure escalation accuracy (when Flash escalated but could have answered correctly = unnecessary cost; when Flash didn't escalate but should have = quality loss).
+- **Load testing:** Verify rate limit behavior under concurrent users. Current limits are based on Gemini API quotas, not empirical server capacity.
+- **RAG retrieval quality metrics:** Compute MRR@5 and NDCG@5 on a query set against the knowledge base to validate chunk size and overlap parameters.
+
+## 17. Project Timeline
 
 | Date | Milestone |
 |------|-----------|
 | **2026-03-13** | Project initialized — monorepo, apps, packages, agentic workflow agent |
 | **2026-03-14** | VPS deployment, knowledge base, security hardening |
-| **2026-03-15** | Autonomous ops agent deployed to production; first auto-remediation (fail2ban + UFW + SSH hardening) |
+| **2026-03-15** | Autonomous ops agent deployed to production; first auto-remediation (fail2ban + UFW + SSH hardening); Smart Gateway implemented |
 
 ## License
 
