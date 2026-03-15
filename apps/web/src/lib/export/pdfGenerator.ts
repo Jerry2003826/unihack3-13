@@ -383,7 +383,7 @@ function buildEnhancedPdfBlob(snapshot: ReportSnapshot): Blob {
     y = drawSectionHeader(pdf, y, "Evidence Summary");
     for (const item of snapshot.evidenceSummary.slice(0, 5)) {
       const conf = item.confidence === "high" ? "✓" : item.confidence === "medium" ? "○" : "?";
-      y = drawBulletItem(pdf, y, `[${conf}] ${item.area}: ${item.finding}`);
+      y = drawBulletItem(pdf, y, `[${conf}] ${item.type}: ${item.summary}`);
     }
     y += 3;
   }
@@ -391,7 +391,7 @@ function buildEnhancedPdfBlob(snapshot: ReportSnapshot): Blob {
   // ===== INSPECTION COVERAGE =====
   if (snapshot.inspectionCoverage) {
     y = drawSectionHeader(pdf, y, "Inspection Coverage");
-    y = drawText(pdf, snapshot.inspectionCoverage.summary, M + 6, y, {
+    y = drawText(pdf, snapshot.inspectionCoverage.summary || "Coverage summary unavailable.", M + 6, y, {
       color: C.white, size: 9.5, maxWidth: CW - 12, lineHeight: 4.2,
     });
     y += 2;
