@@ -444,6 +444,58 @@ async function rerankCandidates(query: string, candidates: RankedKnowledgeChunk[
     }));
 }
 
+/**
+ * Google Gemini rerank fallback — asks Gemini to score each document's
+ * relevance to the query on a 0-1 scale, then sorts by score.
+ */
+async function rerankWithGemini(query: string, candidates: RankedKnowledgeChunk[], topN: number) {
+  const { callGeminiJson } = await import("../ai");
+  const { z } = await import("zod");
+
+  const scoringSchema = z.object({
+    scores: z.array(
+      z.object({
+        index: z.number().describe("0-based index of the document in the input list."),
+        relevance: z.number().describe("Relevance score from 0.0 (irrelevant) to 1.0 (highly relevant)."),
+      })
+    ),
+  });
+
+  const docs = candidates.slice(0, 15).map((c, i) => `[${i}] ${c.chunk.title}: ${c.chunk.content.slice(0, 200)}`);
+
+  const result = await callGeminiJson({
+    model: "gemini-2.5-flash",
+    schema: scoringSchema,
+    timeoutMs: 6_000,
+    skipEscalation: true,
+    prompt: [
+      "You are a document relevance scorer. For each document below, score how relevant it is to the user query.",
+      "Return a JSON object with a 'scores' array. Each entry has 'index' (0-based) and 'relevance' (0.0 to 1.0).",
+      "Be strict: only give high scores (>0.7) to documents that directly address the query.",
+      "",
+      `Query: "${query}"`,
+      "",
+      "Documents:",
+      ...docs,
+    ].join("\n"),
+  });
+
+  const scored = result.scores
+    .filter((s) => Number.isInteger(s.index) && s.index >= 0 && s.index < candidates.length)
+    .sort((a, b) => b.relevance - a.relevance)
+    .slice(0, topN)
+    .map((s) => ({
+      ...candidates[s.index],
+      rerankScore: s.relevance,
+    }));
+
+  if (scored.length === 0) {
+    throw new Error("Gemini rerank returned no valid scores.");
+  }
+
+  return scored;
+}
+
 async function retrieveDenseCandidates(query: string) {
   if (!appEnv.qdrantUrl || !appEnv.qdrantCollection) {
     throw new Error("Qdrant runtime config is missing.");
@@ -623,14 +675,23 @@ export async function queryKnowledgeRag(args: {
           rerankScore: item.retrievalScore,
         }));
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      failures.push(`rerank_failed: ${message}`);
-      ranked = ranked.slice(0, safeTopK).map((item) => ({
-        ...item,
-        rerankScore: item.retrievalScore,
-      }));
-      rerankUsed = false;
+    } catch (cohereError) {
+      const cohereMsg = cohereError instanceof Error ? cohereError.message : String(cohereError);
+      console.warn(`[RAG] Cohere rerank failed: ${cohereMsg}. Trying Gemini fallback...`);
+
+      try {
+        ranked = await rerankWithGemini(args.query, ranked, safeTopK);
+        rerankUsed = true;
+        console.log("[RAG] Gemini rerank fallback succeeded.");
+      } catch (geminiError) {
+        const geminiMsg = geminiError instanceof Error ? geminiError.message : String(geminiError);
+        failures.push(`rerank_failed: cohere(${cohereMsg}) gemini(${geminiMsg})`);
+        ranked = ranked.slice(0, safeTopK).map((item) => ({
+          ...item,
+          rerankScore: item.retrievalScore,
+        }));
+        rerankUsed = false;
+      }
     }
 
     const matches = toRagMatches(ranked.slice(0, safeTopK), args.query);

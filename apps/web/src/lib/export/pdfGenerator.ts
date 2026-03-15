@@ -46,6 +46,19 @@ function buildFileBase(snapshot: ReportSnapshot) {
   return `${addressPart}-${snapshot.reportId.slice(0, 8)}`;
 }
 
+/** Strip non-Latin-1 characters that jsPDF Helvetica cannot render. */
+function sanitizePdfText(text: string): string {
+  return text
+    .replace(/[\u2018\u2019]/g, "'")   // smart quotes
+    .replace(/[\u201C\u201D]/g, '"')   // smart double quotes
+    .replace(/\u2014/g, "--")          // em dash
+    .replace(/\u2013/g, "-")           // en dash
+    .replace(/\u2026/g, "...")         // ellipsis
+    .replace(/\u2022/g, "*")           // bullet
+    .replace(/\u2019/g, "'")           // right single quote
+    .replace(/[^\x00-\xFF]/g, "");     // strip everything outside Latin-1
+}
+
 function triggerDownload(href: string, fileName: string) {
   const link = document.createElement("a");
   link.href = href;
@@ -337,10 +350,10 @@ function buildEnhancedPdfBlob(snapshot: ReportSnapshot): Blob {
   if (snapshot.hazards.length > 0) {
     // Table
     const hazardRows = snapshot.hazards.slice(0, 10).map((h) => [
-      h.severity,
-      h.category,
-      h.roomType ? formatRoomTypeLabel(h.roomType) : "—",
-      h.description.slice(0, 60),
+      sanitizePdfText(h.severity),
+      sanitizePdfText(h.category),
+      h.roomType ? sanitizePdfText(formatRoomTypeLabel(h.roomType)) : "-",
+      sanitizePdfText(h.description.slice(0, 60)),
     ]);
     y = drawTable(pdf, y, ["Severity", "Category", "Room", "Description"],
       hazardRows, [22, 28, 28, CW - 78]);
@@ -367,7 +380,7 @@ function buildEnhancedPdfBlob(snapshot: ReportSnapshot): Blob {
           if (hazard) {
             pdf.setFontSize(6.5);
             pdf.setTextColor(...getSeverityColor(hazard.severity));
-            pdf.text(`${hazard.severity}: ${hazard.category}`.slice(0, 30), tx + 1, y + thumbH + 3);
+            pdf.text(sanitizePdfText(`${hazard.severity}: ${hazard.category}`.slice(0, 30)), tx + 1, y + thumbH + 3);
           }
         }
       }
@@ -382,8 +395,8 @@ function buildEnhancedPdfBlob(snapshot: ReportSnapshot): Blob {
   if (snapshot.evidenceSummary) {
     y = drawSectionHeader(pdf, y, "Evidence Summary");
     for (const item of snapshot.evidenceSummary.slice(0, 5)) {
-      const conf = item.confidence === "high" ? "✓" : item.confidence === "medium" ? "○" : "?";
-      y = drawBulletItem(pdf, y, `[${conf}] ${item.type}: ${item.summary}`);
+      const conf = item.confidence === "high" ? "[Y]" : item.confidence === "medium" ? "[~]" : "[?]";
+      y = drawBulletItem(pdf, y, sanitizePdfText(`${conf} ${item.type}: ${item.summary}`));
     }
     y += 3;
   }
@@ -391,17 +404,17 @@ function buildEnhancedPdfBlob(snapshot: ReportSnapshot): Blob {
   // ===== INSPECTION COVERAGE =====
   if (snapshot.inspectionCoverage) {
     y = drawSectionHeader(pdf, y, "Inspection Coverage");
-    y = drawText(pdf, snapshot.inspectionCoverage.summary || "Coverage summary unavailable.", M + 6, y, {
+    y = drawText(pdf, sanitizePdfText(snapshot.inspectionCoverage.summary || "Coverage summary unavailable."), M + 6, y, {
       color: C.white, size: 9.5, maxWidth: CW - 12, lineHeight: 4.2,
     });
     y += 2;
 
     if (snapshot.inspectionCoverage.warning) {
-      y = drawBulletItem(pdf, y, `⚠ ${snapshot.inspectionCoverage.warning}`, { bulletColor: C.yellow });
+      y = drawBulletItem(pdf, y, `WARNING: ${sanitizePdfText(snapshot.inspectionCoverage.warning)}`, { bulletColor: C.yellow });
     }
     if (snapshot.inspectionCoverage.missingAreas.length > 0) {
       y = drawBulletItem(pdf, y,
-        `Missing: ${snapshot.inspectionCoverage.missingAreas.slice(0, 4).join(", ")}`,
+        `Missing: ${sanitizePdfText(snapshot.inspectionCoverage.missingAreas.slice(0, 4).join(", "))}`,
         { bulletColor: C.orange }
       );
     }
@@ -413,7 +426,7 @@ function buildEnhancedPdfBlob(snapshot: ReportSnapshot): Blob {
     y = drawSectionHeader(pdf, y, "Pre-Lease Action Guide");
 
     if (snapshot.preLeaseActionGuide.summary) {
-      y = drawText(pdf, snapshot.preLeaseActionGuide.summary, M + 6, y, {
+      y = drawText(pdf, sanitizePdfText(snapshot.preLeaseActionGuide.summary), M + 6, y, {
         color: C.white, size: 9.5, maxWidth: CW - 12, lineHeight: 4.2,
       });
       y += 3;
@@ -428,7 +441,7 @@ function buildEnhancedPdfBlob(snapshot: ReportSnapshot): Blob {
     drawText(pdf, "Negotiate", M + 4, leftY, { color: C.cyan, size: 8.5, style: "bold", maxWidth: COL_W });
     leftY += 5;
     for (const point of snapshot.preLeaseActionGuide.negotiatePoints.slice(0, 4)) {
-      leftY = drawBulletItem(pdf, leftY, point, { maxWidth: COL_W - 8, indent: M + 8 });
+      leftY = drawBulletItem(pdf, leftY, sanitizePdfText(point), { maxWidth: COL_W - 8, indent: M + 8 });
     }
 
     // Right column header
@@ -438,7 +451,7 @@ function buildEnhancedPdfBlob(snapshot: ReportSnapshot): Blob {
       rightY = ensureSpace(pdf, rightY, 8);
       pdf.setFillColor(...C.cyan);
       pdf.circle(M + COL_W + 5, rightY - 1, 0.8, "F");
-      rightY = drawText(pdf, item, M + COL_W + 10, rightY, {
+      rightY = drawText(pdf, sanitizePdfText(item), M + COL_W + 10, rightY, {
         color: C.white, size: 9.5, maxWidth: COL_W - 12, lineHeight: 4.2,
       }) + 1.5;
     }
@@ -450,19 +463,19 @@ function buildEnhancedPdfBlob(snapshot: ReportSnapshot): Blob {
   if (snapshot.knowledgeAnswer) {
     y = drawSectionHeader(pdf, y, "Knowledge Base Guidance (RAG)");
 
-    y = drawText(pdf, snapshot.knowledgeAnswer.summary, M + 6, y, {
+    y = drawText(pdf, sanitizePdfText(snapshot.knowledgeAnswer.summary), M + 6, y, {
       color: C.white, size: 10, style: "bold", maxWidth: CW - 12, lineHeight: 4.5,
     });
     y += 2;
 
     for (const point of snapshot.knowledgeAnswer.keyPoints.slice(0, 4)) {
-      y = drawBulletItem(pdf, y, point);
+      y = drawBulletItem(pdf, y, sanitizePdfText(point));
     }
 
     if (snapshot.knowledgeTrace) {
       y += 1;
       y = drawText(pdf,
-        `RAG: ${snapshot.knowledgeTrace.mode} | retrieved ${snapshot.knowledgeTrace.retrievedCount} | reranked ${snapshot.knowledgeTrace.rerankedCount} | rerank: ${snapshot.knowledgeTrace.rerankUsed ? "on" : "off"}`,
+        sanitizePdfText(`RAG: ${snapshot.knowledgeTrace.mode} | retrieved ${snapshot.knowledgeTrace.retrievedCount} | reranked ${snapshot.knowledgeTrace.rerankedCount} | rerank: ${snapshot.knowledgeTrace.rerankUsed ? "on" : "off"}`),
         M + 6, y, { color: C.muted, size: 7.5 }
       );
     }
@@ -475,13 +488,13 @@ function buildEnhancedPdfBlob(snapshot: ReportSnapshot): Blob {
 
     const pwRows: string[][] = [];
     for (const item of snapshot.paperworkChecks.checklist.slice(0, 4)) {
-      pwRows.push(["Checklist", item.slice(0, 70)]);
+      pwRows.push(["Checklist", sanitizePdfText(item.slice(0, 70))]);
     }
     for (const flag of snapshot.paperworkChecks.riskFlags.slice(0, 3)) {
-      pwRows.push(["⚠ Risk Flag", flag.slice(0, 70)]);
+      pwRows.push(["! Risk Flag", sanitizePdfText(flag.slice(0, 70))]);
     }
     for (const doc of snapshot.paperworkChecks.requiredDocuments.slice(0, 3)) {
-      pwRows.push(["📄 Document", doc.slice(0, 70)]);
+      pwRows.push(["Document", sanitizePdfText(doc.slice(0, 70))]);
     }
 
     if (pwRows.length > 0) {
@@ -496,13 +509,13 @@ function buildEnhancedPdfBlob(snapshot: ReportSnapshot): Blob {
 
     for (const basis of snapshot.reportEvidenceBasis.slice(0, 4)) {
       y = ensureSpace(pdf, y, 14);
-      const room = formatRoomTypeLabel(basis.roomType);
+      const room = sanitizePdfText(formatRoomTypeLabel(basis.roomType));
 
-      y = drawKeyValueRow(pdf, y, room, `${basis.verdict.status} — ${basis.verdict.summary}`, CW);
+      y = drawKeyValueRow(pdf, y, room, sanitizePdfText(`${basis.verdict.status} - ${basis.verdict.summary}`), CW);
 
       if (basis.missingEvidence.length > 0) {
         y = drawBulletItem(pdf, y,
-          `Missing: ${basis.missingEvidence.slice(0, 3).join(", ")}`,
+          `Missing: ${sanitizePdfText(basis.missingEvidence.slice(0, 3).join(", "))}`,
           { bulletColor: C.orange, indent: M + 12 }
         );
       }
