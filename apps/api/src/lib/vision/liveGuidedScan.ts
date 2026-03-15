@@ -292,6 +292,7 @@ export async function analyzeLiveFrame(request: LiveAnalyzeRequest): Promise<Liv
       model: appEnv.geminiLiveModel,
       schema: liveFrameSchema,
       timeoutMs: 8_000,
+      skipEscalation: true,
       prompt: [
         "You are triaging a live rental inspection camera frame.",
         "Return only JSON with visible renter-relevant issues and room-coverage guidance.",

@@ -700,7 +700,7 @@ export default function ReportPage() {
 
   const severityBreakdown = riskState.breakdown;
   const isReportStable =
-    deepStatus !== "loading" && recommendationStatus !== "loading" && knowledgeStatus !== "loading" && !isBooting;
+    deepStatus !== "loading" && recommendationStatus !== "loading" && !isBooting;
 
   async function commitSnapshotUpdate(mutator: (current: ReportSnapshot) => ReportSnapshot) {
     const currentSnapshot = snapshotRef.current;

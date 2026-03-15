@@ -68,6 +68,7 @@ export async function analyzePropertyImages(request: AnalyzeRequest) {
       parts: imageParts,
       schema: hazardDraftsArraySchema,
       timeoutMs: 25_000,
+      skipEscalation: true,
     });
 
     const hazards = drafts.map((draft) =>

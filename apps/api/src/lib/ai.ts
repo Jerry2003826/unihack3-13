@@ -65,6 +65,7 @@ export async function callGeminiJson<TSchema extends ZodTypeAny>(args: {
   schema: TSchema;
   parts?: Array<{ inlineData?: { data: string; mimeType: string }; text?: string }>;
   timeoutMs?: number;
+  skipEscalation?: boolean;
 }) {
   const client = getGeminiClient();
   if (!client) {
@@ -73,7 +74,8 @@ export async function callGeminiJson<TSchema extends ZodTypeAny>(args: {
 
   const isFlash = args.model.includes("flash");
   const canExtend = typeof (args.schema as any).extend === "function";
-  const gatewaySchema = isFlash && canExtend
+  const shouldGateway = isFlash && canExtend && !args.skipEscalation;
+  const gatewaySchema = shouldGateway
     ? (args.schema as any).extend({
         _escalateToPro: z
           .boolean()
@@ -107,9 +109,8 @@ export async function callGeminiJson<TSchema extends ZodTypeAny>(args: {
     throw new Error("Gemini returned an empty response.");
   }
 
-  if (isFlash && canExtend) {
-    const rawFlash = extractJsonText(response.text ?? "");
-    const parsedData = JSON.parse(rawFlash);
+  if (shouldGateway) {
+    const parsedData = JSON.parse(rawText);
     if (parsedData._escalateToPro === true) {
       console.log(`[Smart Gateway] Escalating task from ${args.model} to ${appEnv.geminiReasoningModel}`);
       const proResponse = await withTimeout(
@@ -141,8 +142,7 @@ export async function callGeminiJson<TSchema extends ZodTypeAny>(args: {
       }
     }
     
-    // Fallthrough: Flash answered successfully without escalating
-    console.log("[Smart Gateway Fallthrough Raw]:", rawText);
+    // Flash answered without escalating
     return args.schema.parse(JSON.parse(rawText));
   }
 

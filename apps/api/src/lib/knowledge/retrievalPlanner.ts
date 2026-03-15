@@ -119,6 +119,7 @@ export async function decomposeQuery(
       model: appEnv.geminiVisionModel,
       schema: queryDecompositionSchema,
       timeoutMs: 8_000,
+      skipEscalation: true,
       prompt: [
         "You are a rental intelligence query planner.",
         "Decompose the user's natural-language query into 1–5 focused sub-questions.",
@@ -266,6 +267,7 @@ async function fuseResults(
       model: appEnv.geminiVisionModel,
       schema: knowledgeAnswerSchema,
       timeoutMs: 8_000,
+      skipEscalation: true,
       prompt: [
         "You are a rental intelligence assistant synthesizing answers from multiple retrieval channels.",
         "Combine the following per-category answers into one coherent response.",

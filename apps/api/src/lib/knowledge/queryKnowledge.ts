@@ -541,6 +541,7 @@ async function generateRagAnswer(query: string, matches: KnowledgeMatch[]) {
       model: "gemini-2.5-flash",
       schema: knowledgeAnswerSchema,
       timeoutMs: 9_000,
+      skipEscalation: true,
       prompt: [
         "You are a renter assistant. Use ONLY the retrieved private knowledge chunks.",
         "Do not invent facts and do not cite outside sources.",
