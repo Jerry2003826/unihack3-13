@@ -72,7 +72,8 @@ export async function callGeminiJson<TSchema extends ZodTypeAny>(args: {
   }
 
   const isFlash = args.model.includes("flash");
-  const gatewaySchema = isFlash
+  const canExtend = typeof (args.schema as any).extend === "function";
+  const gatewaySchema = isFlash && canExtend
     ? (args.schema as any).extend({
         _escalateToPro: z
           .boolean()
@@ -106,7 +107,7 @@ export async function callGeminiJson<TSchema extends ZodTypeAny>(args: {
     throw new Error("Gemini returned an empty response.");
   }
 
-  if (isFlash) {
+  if (isFlash && canExtend) {
     const rawFlash = extractJsonText(response.text ?? "");
     const parsedData = JSON.parse(rawFlash);
     if (parsedData._escalateToPro === true) {
