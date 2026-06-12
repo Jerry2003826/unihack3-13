@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useChecklistPrefill } from "@/hooks/useChecklistPrefill";
+import { useI18n } from "@/lib/i18n";
 import { useListingDiscovery } from "@/hooks/useListingDiscovery";
 import { saveSearchHistory } from "@/lib/history/historyStore";
 import { requestCurrentLocation, reverseGeocodeCoordinates } from "@/lib/location";
@@ -40,6 +41,7 @@ type IntakeMode = "live" | "manual" | null;
 
 export default function HomePage() {
   const router = useRouter();
+  const { t } = useI18n();
   const {
     address: draftAddress,
     agency: draftAgency,
@@ -106,11 +108,11 @@ export default function HomePage() {
   const hasAddress = address.trim().length > 0;
   const locationBadge =
     locationStatus === "success"
-      ? { label: "Resolved", variant: "default" as const }
+      ? { label: t("Resolved"), variant: "default" as const }
       : locationStatus === "fallback"
-        ? { label: "Fallback", variant: "secondary" as const }
+        ? { label: t("Fallback"), variant: "secondary" as const }
         : locationStatus === "error"
-          ? { label: "Error", variant: "destructive" as const }
+          ? { label: t("Error"), variant: "destructive" as const }
           : null;
 
   const isBreaching = systemState === "BREACHING";
@@ -119,10 +121,10 @@ export default function HomePage() {
   const isWarning = isBreaching || isExiting;
 
   const getStatusText = () => {
-    if (isBreaching) return "CRITICAL OVERRIDE: BREACHING EXTERIOR...";
-    if (isInterior) return "INTERIOR TOPOLOGY: LIVING ROOM SECURED";
-    if (isExiting) return "RE-ESTABLISHING MACRO VIEW...";
-    return SHAPE_TYPES.find((shape) => shape.id === systemState)?.name || "EXTERNAL MACRO SCAN";
+    if (isBreaching) return t("CRITICAL OVERRIDE: BREACHING EXTERIOR...");
+    if (isInterior) return t("INTERIOR TOPOLOGY: LIVING ROOM SECURED");
+    if (isExiting) return t("RE-ESTABLISHING MACRO VIEW...");
+    return t(SHAPE_TYPES.find((shape) => shape.id === systemState)?.name || "EXTERNAL MACRO SCAN");
   };
   const statusText = getStatusText();
 
@@ -140,21 +142,21 @@ export default function HomePage() {
       }
       setIsManualAddressOpen(false);
       setLocationStatus(geocoded.provider === "fallback" ? "fallback" : "success");
-      toast.success("Address filled from current location.");
+      toast.success(t("Address filled from current location."));
     } catch (error) {
       setIsManualAddressOpen(true);
       setLocationStatus("error");
-      toast.error(error instanceof Error ? error.message : "Failed to resolve current location.");
+      toast.error(error instanceof Error ? error.message : t("Failed to resolve current location."));
     }
   };
 
   const handleStartLiveScan = async () => {
     if (!address.trim()) {
-      toast.error("Address is required");
+      toast.error(t("Address is required"));
       return;
     }
     if (!agency.trim()) {
-      toast.error("Agency name is required");
+      toast.error(t("Agency name is required"));
       return;
     }
 
@@ -284,7 +286,7 @@ export default function HomePage() {
               ) : (
                 <Activity className="size-4 animate-pulse" />
               )}
-              <span className="truncate">{isWarning ? "BREACH PROTOCOL INIT" : isInterior ? "MICRO-SCALE MAPPING" : "MACRO-SCALE MAPPING"}</span>
+              <span className="truncate">{isWarning ? t("BREACH PROTOCOL INIT") : isInterior ? t("MICRO-SCALE MAPPING") : t("MACRO-SCALE MAPPING")}</span>
             </div>
 
             <h1
@@ -296,13 +298,12 @@ export default function HomePage() {
             </h1>
 
             <div className="text-sm font-semibold uppercase tracking-[0.22em] text-[#3DDCFF]">
-              Scan Deeper. Rent Smarter.
+              {t("Scan Deeper. Rent Smarter.")}
             </div>
 
             <p className="max-w-[23rem] text-sm font-light leading-relaxed text-gray-300 drop-shadow-md">
-              An AI-first rental inspection copilot built for faster screening, stronger evidence capture, and
-              smarter lease decisions.
-              <span className="font-medium text-white"> Move past surface impressions and inspect what actually matters.</span>
+              {t("An AI-first rental inspection copilot built for faster screening, stronger evidence capture, and smarter lease decisions.")}
+              <span className="font-medium text-white"> {t("Move past surface impressions and inspect what actually matters.")}</span>
             </p>
 
             <div className="flex max-w-sm flex-col gap-3 pt-2">
@@ -313,7 +314,7 @@ export default function HomePage() {
               >
                 <span className="absolute inset-0 translate-y-full bg-white/30 transition-transform duration-300 group-hover:translate-y-0" />
                 <Scan className="relative z-10 size-5" />
-                <span className="relative z-10 tracking-wide">Enter Deep Scan</span>
+                <span className="relative z-10 tracking-wide">{t("Enter Deep Scan")}</span>
                 <ChevronRight className="relative z-10 size-4" />
               </button>
               <button
@@ -322,7 +323,7 @@ export default function HomePage() {
                 className="group flex items-center justify-center gap-2 rounded-xl border border-white/20 px-5 py-4 font-semibold text-white backdrop-blur-md transition-all hover:bg-white/10"
               >
                 <Upload className="size-5 text-gray-400 transition-colors group-hover:text-white" />
-                <span>Manual Override</span>
+                <span>{t("Manual Override")}</span>
               </button>
             </div>
           </section>
@@ -332,14 +333,14 @@ export default function HomePage() {
               <div className="border-b border-[#3DDCFF]/20 p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-1">
-                    <div className="text-[10px] font-mono uppercase tracking-widest text-[#3DDCFF]">TARGET LOCK</div>
+                    <div className="text-[10px] font-mono uppercase tracking-widest text-[#3DDCFF]">{t("TARGET LOCK")}</div>
                     <div className="max-w-[14rem] font-mono text-xs font-semibold tracking-wider text-white">
                       {statusText}
                     </div>
                   </div>
                   <div className="inline-flex items-center gap-1.5 rounded border border-[#3DDCFF]/40 bg-[#3DDCFF]/15 px-2.5 py-1 text-[10px] font-mono text-[#3DDCFF]">
                     <div className="size-1.5 animate-pulse rounded-full bg-[#3DDCFF]" />
-                    {isInterior ? "MICRO-SCAN" : "MACRO-SCAN"}
+                    {isInterior ? t("MICRO-SCAN") : t("MACRO-SCAN")}
                   </div>
                 </div>
               </div>
@@ -350,7 +351,7 @@ export default function HomePage() {
                   }`}
                 >
                   <div className={`mb-1 text-[10px] font-mono uppercase tracking-wider ${hazardCount > 0 ? "text-[#FF2A3F]" : "text-[#3DDCFF]"}`}>
-                    Detected Hazards
+                    {t("Detected Hazards")}
                   </div>
                   <div className={`flex items-center gap-2 font-mono text-2xl font-bold ${hazardCount > 0 ? "text-[#FF2A3F]" : "text-[#3DDCFF]"}`}>
                     {hazardCount.toString().padStart(2, "0")}
@@ -358,14 +359,14 @@ export default function HomePage() {
                   </div>
                 </div>
                 <div className="rounded-xl border border-[#3DDCFF]/20 bg-[#3DDCFF]/10 p-3">
-                  <div className="mb-1 text-[10px] font-mono uppercase tracking-wider text-[#3DDCFF]">Data Integrity</div>
+                  <div className="mb-1 text-[10px] font-mono uppercase tracking-wider text-[#3DDCFF]">{t("Data Integrity")}</div>
                   <div className="font-mono text-2xl font-bold text-[#3DDCFF]">{Math.max(0, 100 - hazardCount)}%</div>
                 </div>
               </div>
             </section>
 
             <div className="text-[10px] font-mono uppercase tracking-widest text-gray-500">
-              LATENCY: 12MS // PROTOCOL: {isInterior ? "INDOOR_MAPPING" : "EXTERIOR_SYNC"}
+              {t("LATENCY: 12MS // PROTOCOL:")} {t(isInterior ? "INDOOR_MAPPING" : "EXTERIOR_SYNC")}
             </div>
           </div>
         </div>
@@ -380,7 +381,7 @@ export default function HomePage() {
             onClick={() => router.push("/compare")}
           >
             <GitCompareArrows className="size-4 sm:mr-2" />
-            <span className="hidden sm:inline">Compare</span>
+            <span className="hidden sm:inline">{t("Compare")}</span>
           </Button>
           <Button
             variant="outline"
@@ -389,7 +390,7 @@ export default function HomePage() {
             onClick={() => router.push("/history")}
           >
             <History className="size-4 sm:mr-2" />
-            <span className="hidden sm:inline">History</span>
+            <span className="hidden sm:inline">{t("History")}</span>
           </Button>
         </div>
 
@@ -412,7 +413,7 @@ export default function HomePage() {
             ) : (
               <Activity className="size-4 animate-pulse" />
             )}
-            <span className="truncate">{isWarning ? "BREACH PROTOCOL INIT" : isInterior ? "MICRO-SCALE MAPPING" : "MACRO-SCALE MAPPING"}</span>
+            <span className="truncate">{isWarning ? t("BREACH PROTOCOL INIT") : isInterior ? t("MICRO-SCALE MAPPING") : t("MACRO-SCALE MAPPING")}</span>
           </div>
 
           <h1
@@ -424,13 +425,12 @@ export default function HomePage() {
           </h1>
 
           <div className="text-sm font-semibold uppercase tracking-[0.22em] text-[#3DDCFF] sm:text-base">
-            Scan Deeper. Rent Smarter.
+            {t("Scan Deeper. Rent Smarter.")}
           </div>
 
           <p className="max-w-[23rem] text-sm font-light leading-relaxed text-gray-300 drop-shadow-md sm:max-w-lg sm:text-base md:text-xl">
-            An AI-first rental inspection copilot built for faster screening, stronger evidence capture, and smarter
-            lease decisions.
-            <span className="font-medium text-white"> Move past surface impressions and inspect what actually matters.</span>
+            {t("An AI-first rental inspection copilot built for faster screening, stronger evidence capture, and smarter lease decisions.")}
+            <span className="font-medium text-white"> {t("Move past surface impressions and inspect what actually matters.")}</span>
           </p>
 
           <div className="flex max-w-sm flex-col gap-3 pt-2 sm:flex-row sm:gap-4 sm:pt-4">
@@ -441,7 +441,7 @@ export default function HomePage() {
             >
               <span className="absolute inset-0 translate-y-full bg-white/30 transition-transform duration-300 group-hover:translate-y-0" />
               <Scan className="relative z-10 size-5" />
-              <span className="relative z-10 tracking-wide">Enter Deep Scan</span>
+              <span className="relative z-10 tracking-wide">{t("Enter Deep Scan")}</span>
               <ChevronRight className="relative z-10 size-4 transition-transform group-hover:translate-x-1" />
             </button>
             <button
@@ -450,7 +450,7 @@ export default function HomePage() {
               className="pointer-events-auto group flex items-center justify-center gap-2 rounded-xl border border-white/20 px-5 py-4 font-semibold text-white backdrop-blur-md transition-all hover:bg-white/10 sm:px-6"
             >
               <Upload className="size-5 text-gray-400 transition-colors group-hover:text-white" />
-              <span>Manual Override</span>
+              <span>{t("Manual Override")}</span>
             </button>
           </div>
         </div>
@@ -467,7 +467,7 @@ export default function HomePage() {
             <div className="flex flex-col gap-3 p-4 sm:gap-4 sm:p-6">
               <div className="flex items-start justify-between border-b border-[#3DDCFF]/20 pb-3">
                 <div className="space-y-1">
-                  <div className="text-[10px] font-mono uppercase tracking-widest text-[#3DDCFF]">TARGET LOCK</div>
+                  <div className="text-[10px] font-mono uppercase tracking-widest text-[#3DDCFF]">{t("TARGET LOCK")}</div>
                   <div key={statusText} className="inspect-animate-fade-up max-w-[14rem] font-mono text-xs font-semibold tracking-wider text-white sm:max-w-none sm:text-sm">
                     {statusText}
                   </div>
@@ -482,7 +482,7 @@ export default function HomePage() {
                   }`}
                 >
                   <div className={`mb-1 text-[10px] font-mono uppercase tracking-wider ${hazardCount > 0 ? "text-[#FF2A3F]" : "text-[#3DDCFF]"}`}>
-                    Detected Hazards
+                    {t("Detected Hazards")}
                   </div>
                   <div className={`flex items-center gap-2 font-mono text-2xl font-bold ${hazardCount > 0 ? "text-[#FF2A3F]" : "text-[#3DDCFF]"}`}>
                     {hazardCount.toString().padStart(2, "0")}
@@ -490,7 +490,7 @@ export default function HomePage() {
                   </div>
                 </div>
                 <div className="rounded-xl border border-[#3DDCFF]/20 bg-[#3DDCFF]/10 p-3">
-                  <div className="mb-1 text-[10px] font-mono uppercase tracking-wider text-[#3DDCFF]">Data Integrity</div>
+                  <div className="mb-1 text-[10px] font-mono uppercase tracking-wider text-[#3DDCFF]">{t("Data Integrity")}</div>
                   <div className="font-mono text-2xl font-bold text-[#3DDCFF]">{Math.max(0, 100 - hazardCount)}%</div>
                 </div>
               </div>
@@ -499,7 +499,7 @@ export default function HomePage() {
 
           <div className="absolute -top-3 right-3 hidden items-center gap-1.5 rounded border border-[#3DDCFF]/40 bg-[#3DDCFF]/15 px-3 py-1.5 text-[10px] font-mono text-[#3DDCFF] shadow-[0_0_15px_rgba(0,0,0,0.5)] backdrop-blur-md sm:flex">
             <div className="size-1.5 animate-pulse rounded-full bg-[#3DDCFF]" />
-            {isInterior ? "MICRO-SCAN" : "MACRO-SCAN"}
+            {t(isInterior ? "MICRO-SCAN" : "MACRO-SCAN")}
           </div>
         </div>
 
@@ -507,7 +507,7 @@ export default function HomePage() {
           className="inspect-animate-fade-up absolute bottom-4 left-4 hidden text-[10px] font-mono uppercase tracking-widest text-gray-500 sm:bottom-10 sm:left-10 sm:block lg:bottom-12 lg:left-16"
           style={{ animationDelay: "400ms" }}
         >
-          LATENCY: 12MS // PROTOCOL: {isInterior ? "INDOOR_MAPPING" : "EXTERIOR_SYNC"}
+          {t("LATENCY: 12MS // PROTOCOL:")} {t(isInterior ? "INDOOR_MAPPING" : "EXTERIOR_SYNC")}
         </div>
       </div>
 
@@ -518,15 +518,15 @@ export default function HomePage() {
               <div className="flex items-start justify-between gap-4">
               <div className="space-y-1">
                 <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-[#3DDCFF]">
-                  {activeMode === "live" ? "LIVE INTAKE" : "MANUAL INTAKE"}
+                  {activeMode === "live" ? t("LIVE INTAKE") : t("MANUAL INTAKE")}
                 </div>
                 <div className="text-xl font-semibold text-white">
-                  {activeMode === "live" ? "Configure Deep Scan" : "Prepare Manual Override"}
+                  {activeMode === "live" ? t("Configure Deep Scan") : t("Prepare Manual Override")}
                 </div>
                 <p className="text-sm text-slate-400">
                   {activeMode === "live"
-                    ? "Only capture the essentials here. RentRadar will guide the walkthrough and record room-level evidence during Live Scan."
-                    : "Keep the cinematic shell, but continue using the full inspection intake below."}
+                    ? t("Only capture the essentials here. RentRadar will guide the walkthrough and record room-level evidence during Live Scan.")
+                    : t("Keep the cinematic shell, but continue using the full inspection intake below.")}
                 </p>
               </div>
               <Button
@@ -544,7 +544,7 @@ export default function HomePage() {
               <div className="grid gap-4 md:grid-cols-[1.15fr_0.85fr]">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-sm font-medium text-white/90">Property Address</span>
+                    <span className="text-sm font-medium text-white/90">{t("Property Address")}</span>
                     {locationBadge ? <Badge variant={locationBadge.variant}>{locationBadge.label}</Badge> : null}
                   </div>
                   <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
@@ -556,15 +556,15 @@ export default function HomePage() {
                         disabled={locationStatus === "loading"}
                       >
                         {locationStatus === "loading"
-                          ? "Locating..."
+                          ? t("Locating...")
                           : hasAddress
-                            ? "Refresh Current Location"
-                            : "Use Current Location"}
+                            ? t("Refresh Current Location")
+                            : t("Use Current Location")}
                       </Button>
                       {hasAddress ? (
                         <div className="rounded-xl border border-white/10 bg-[#090B12]/70 p-3">
                           <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
-                            {locationStatus === "success" || locationStatus === "fallback" ? "Resolved Address" : "Saved Address"}
+                            {locationStatus === "success" || locationStatus === "fallback" ? t("Resolved Address") : t("Saved Address")}
                           </p>
                           <p className="mt-2 text-sm font-medium text-white">{address}</p>
                           {coordinates ? (
@@ -575,12 +575,12 @@ export default function HomePage() {
                         </div>
                       ) : (
                         <p className="text-xs text-slate-400">
-                          Tap once to use your current location and auto-fill the property address.
+                          {t("Tap once to use your current location and auto-fill the property address.")}
                         </p>
                       )}
                       {locationStatus === "error" ? (
                         <p className="text-xs text-[#FF7A85]">
-                          We could not access your current location. Enter the address manually below.
+                          {t("We could not access your current location. Enter the address manually below.")}
                         </p>
                       ) : null}
                       <div className="space-y-3">
@@ -592,10 +592,10 @@ export default function HomePage() {
                           className="h-auto justify-start px-0 text-sm text-[#3DDCFF] hover:bg-transparent hover:text-white"
                         >
                           {isManualAddressOpen
-                            ? "Hide manual address entry"
+                            ? t("Hide manual address entry")
                             : hasAddress
-                              ? "Edit address manually"
-                              : "Enter address manually"}
+                              ? t("Edit address manually")
+                              : t("Enter address manually")}
                         </Button>
                         {isManualAddressOpen ? (
                           <Input
@@ -625,7 +625,7 @@ export default function HomePage() {
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <label htmlFor="agency" className="text-sm font-medium text-white/90">
-                      Real Estate Agency
+                      {t("Real Estate Agency")}
                     </label>
                     <Input
                       id="agency"
@@ -637,7 +637,7 @@ export default function HomePage() {
                   </div>
                   <div className="space-y-2">
                     <label htmlFor="asking-rent" className="text-sm font-medium text-white/90">
-                      Weekly Rent (Optional)
+                      {t("Weekly Rent (Optional)")}
                     </label>
                     <Input
                       id="asking-rent"
@@ -650,7 +650,7 @@ export default function HomePage() {
                   </div>
                   <div className="space-y-2">
                     <label htmlFor="listing-url" className="text-sm font-medium text-white/90">
-                      Property Listing Link (Optional)
+                      {t("Property Listing Link (Optional)")}
                     </label>
                     <Input
                       id="listing-url"
@@ -665,7 +665,7 @@ export default function HomePage() {
                       className="border-white/10 bg-white/[0.04] text-white placeholder:text-slate-500 focus-visible:ring-[#3DDCFF]"
                     />
                     <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
-                      <span>Leave this blank and we&apos;ll try to infer a listing page from the address.</span>
+                      <span>{t("Leave this blank and we'll try to infer a listing page from the address.")}</span>
                       <Button
                         type="button"
                         variant="ghost"
@@ -678,14 +678,14 @@ export default function HomePage() {
                           listingDiscovery.retry();
                         }}
                       >
-                        Auto-detect from address
+                        {t("Auto-detect from address")}
                       </Button>
                     </div>
                     {listingDiscovery.status !== "idle" || normalizedListingUrl ? (
                       <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
                         <div className="flex items-center justify-between gap-3">
                           <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
-                            Listing discovery
+                            {t("Listing discovery")}
                           </div>
                           <Badge
                             variant={
@@ -698,13 +698,13 @@ export default function HomePage() {
                                     : "outline"
                             }
                           >
-                            {normalizedListingUrl ? "linked" : listingDiscovery.status}
+                            {normalizedListingUrl ? t("linked") : t(listingDiscovery.status)}
                           </Badge>
                         </div>
                         <p className="mt-2 text-xs text-slate-400">
                           {listingDiscovery.status === "loading"
-                            ? "Searching for likely rental listing pages that match this address..."
-                            : listingDiscovery.summary || "You can paste the exact listing page URL if you already have it."}
+                            ? t("Searching for likely rental listing pages that match this address...")
+                            : listingDiscovery.summary || t("You can paste the exact listing page URL if you already have it.")}
                         </p>
                         {normalizedListingUrl ? (
                           <a
@@ -724,15 +724,15 @@ export default function HomePage() {
 
               {activeMode === "manual" ? (
                 <div className="space-y-2">
-                  <div className="text-sm font-medium text-white/90">Inspection Notes & Entry Condition (Optional)</div>
+                  <div className="text-sm font-medium text-white/90">{t("Inspection Notes & Entry Condition (Optional)")}</div>
                   <p className="text-xs text-slate-400">
-                    Capture the practical items that affect move-in risk, lease clarity, utilities, and daily livability.
+                    {t("Capture the practical items that affect move-in risk, lease clarity, utilities, and daily livability.")}
                   </p>
                   {checklistPrefill.status !== "idle" ? (
                     <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
                       <div className="flex items-center justify-between gap-3">
                         <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
-                          Remote checklist assist
+                          {t("Remote checklist assist")}
                         </div>
                         <Badge
                           variant={
@@ -745,12 +745,12 @@ export default function HomePage() {
                                   : "outline"
                           }
                         >
-                          {checklistPrefill.status}
+                          {t(checklistPrefill.status)}
                         </Badge>
                       </div>
                       <p className="mt-2 text-xs text-slate-400">
                         {checklistPrefill.status === "loading"
-                          ? "Searching Google Maps and web sources to prefill the checklist..."
+                          ? t("Searching Google Maps and web sources to prefill the checklist...")
                           : checklistPrefill.summary}
                       </p>
                       {checklistPrefill.status === "fallback" || checklistPrefill.status === "error" ? (
@@ -761,7 +761,7 @@ export default function HomePage() {
                           className="mt-2 h-auto px-0 text-xs text-[#3DDCFF] hover:bg-transparent hover:text-white"
                           onClick={checklistPrefill.retry}
                         >
-                          Retry remote prefill
+                          {t("Retry remote prefill")}
                         </Button>
                       ) : null}
                     </div>
@@ -779,23 +779,24 @@ export default function HomePage() {
                 </div>
               ) : (
                 <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                  <div className="text-sm font-medium text-white/90">AI-guided checklist capture</div>
+                  <div className="text-sm font-medium text-white/90">{t("AI-guided checklist capture")}</div>
                   <p className="text-xs leading-relaxed text-slate-400">
-                    Live Scan will guide the walkthrough and collect condition notes while you move through the space.
-                    You do not need to fill the inspection checklist manually here.
+                    {t("Live Scan will guide the walkthrough and collect condition notes while you move through the space.")}
+                    {" "}
+                    {t("You do not need to fill the inspection checklist manually here.")}
                   </p>
                   <div className="grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
                     <div className="rounded-xl border border-white/10 bg-[#090B12]/50 px-3 py-2">
-                      Access, doors, intercom, parcel areas
+                      {t("Access, doors, intercom, parcel areas")}
                     </div>
                     <div className="rounded-xl border border-white/10 bg-[#090B12]/50 px-3 py-2">
-                      Windows, seals, visible moisture, and wall edges
+                      {t("Windows, seals, visible moisture, and wall edges")}
                     </div>
                     <div className="rounded-xl border border-white/10 bg-[#090B12]/50 px-3 py-2">
-                      Appliances, fixtures, storage, and room usability
+                      {t("Appliances, fixtures, storage, and room usability")}
                     </div>
                     <div className="rounded-xl border border-white/10 bg-[#090B12]/50 px-3 py-2">
-                      Guided issue confirmation with voice and on-screen prompts
+                      {t("Guided issue confirmation with voice and on-screen prompts")}
                     </div>
                   </div>
                 </div>
@@ -805,7 +806,7 @@ export default function HomePage() {
             <div className="shrink-0 border-t border-white/10 px-5 py-4 sm:px-6">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-xs uppercase tracking-[0.18em] text-slate-500">
-                {activeMode === "live" ? "Ready for guided radar scan" : "Ready for manual photo upload"}
+                {activeMode === "live" ? t("Ready for guided radar scan") : t("Ready for manual photo upload")}
               </div>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Button
@@ -814,11 +815,11 @@ export default function HomePage() {
                   onClick={handleManualUpload}
                 >
                   <Upload className="mr-2 size-4" />
-                  Continue to Manual Upload
+                  {t("Continue to Manual Upload")}
                 </Button>
                 <Button className="bg-[#3DDCFF] text-[#090B12] hover:bg-[#3DDCFF]/90" onClick={() => void handleStartLiveScan()}>
                   <Scan className="mr-2 size-4" />
-                  Start Live Scan
+                  {t("Start Live Scan")}
                 </Button>
               </div>
               </div>

@@ -29,9 +29,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useI18n } from "@/lib/i18n";
 import { publicAppConfig } from "@/lib/config/public";
 import { exportReportPdf, exportReportPoster } from "@/lib/export/pdfGenerator";
 import { buildRecommendationFallbackBundle } from "@/lib/recommendationFallback";
+import { localizeReportSnapshot } from "@/lib/runtimeTranslation";
 import { normalizeReportSnapshot } from "@/lib/report/normalizeReportSnapshot";
 import { promoteSuggestedMarkerToHazard, replaceSceneMarker } from "@/lib/roomSceneHazards";
 import { toOptionalUrl } from "@/lib/url";
@@ -261,6 +263,7 @@ function ExpandableDetails({
 export default function ReportPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const { t, locale } = useI18n();
   const reportId = typeof params.id === "string" ? params.id : "";
 
   const [snapshot, setSnapshot] = useState<ReportSnapshot | null>(null);
@@ -272,6 +275,7 @@ export default function ReportPage() {
   const [lazyError, setLazyError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState<"pdf" | "poster" | null>(null);
   const [signedThumbnailUrls, setSignedThumbnailUrls] = useState<Record<string, string>>({});
+  const [localizedSnapshot, setLocalizedSnapshot] = useState<ReportSnapshot | null>(null);
   const enrichmentStartedRef = useRef<string | null>(null);
   const knowledgeStartedRef = useRef<string | null>(null);
   const snapshotRef = useRef<ReportSnapshot | null>(null);
@@ -487,7 +491,7 @@ export default function ReportPage() {
         await applyRecommendationFallback(latestIntelligence ?? currentSnapshot.intelligence);
         setRecommendationStatus("fallback");
         setLazyError(RECOMMENDATION_FALLBACK_NOTICE);
-        toast.info("Using local analysis while full recommendation loads.");
+        toast.info(t("Using local analysis while full recommendation loads."));
         console.warn("Recommendation fallback", error);
       }
     }
@@ -504,7 +508,7 @@ export default function ReportPage() {
     return () => {
       controller.abort();
     };
-  }, [isBooting, snapshot?.reportId]);
+  }, [isBooting, snapshot?.reportId, t]);
 
   useEffect(() => {
     if (!snapshot) {
@@ -679,6 +683,35 @@ export default function ReportPage() {
     };
   }, [snapshot]);
 
+  useEffect(() => {
+    if (!snapshot || locale === "en") {
+      return;
+    }
+
+    let cancelled = false;
+
+    localizeReportSnapshot(snapshot, locale)
+      .then((localized) => {
+        if (!cancelled) {
+          setLocalizedSnapshot(localized);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.warn("Runtime translation failed, using original text", err);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshot, locale]);
+
+  // Only use localized snapshot for non-English locales; otherwise fall back to original
+  const displaySnapshot = locale !== "en" && localizedSnapshot ? localizedSnapshot : snapshot;
+
+  const nearbyEssentials = displaySnapshot?.intelligence?.geoAnalysis?.nearbyEssentials ?? [];
+
   const riskState = useMemo(() => {
     if (!snapshot) {
       return null;
@@ -692,9 +725,7 @@ export default function ReportPage() {
     [snapshot?.inputs.inspectionChecklist]
   );
 
-  const nearbyEssentials = snapshot?.intelligence?.geoAnalysis?.nearbyEssentials ?? [];
-
-  if (isBooting || !snapshot || !riskState) {
+  if (isBooting || !displaySnapshot || !riskState) {
     return <ReportLoadingState />;
   }
 
@@ -747,7 +778,7 @@ export default function ReportPage() {
     );
 
     if (duplicate) {
-      toast.info("A matching issue is already in the formal hazard list.");
+      toast.info(t("A matching issue is already in the formal hazard list."));
       return;
     }
 
@@ -773,7 +804,7 @@ export default function ReportPage() {
       },
     }));
 
-    toast.success("Suggested issue added to the formal hazard list.");
+    toast.success(t("Suggested issue added to the formal hazard list."));
   }
 
   async function handleExport(type: "pdf" | "poster") {
@@ -782,7 +813,7 @@ export default function ReportPage() {
     }
 
     if (!isReportStable) {
-      toast.info("Wait for the report to finish stabilizing before exporting.");
+      toast.info(t("Wait for the report to finish stabilizing before exporting."));
       return;
     }
 
@@ -793,9 +824,9 @@ export default function ReportPage() {
       } else {
         await exportReportPoster({ reportNode: reportContentRef.current, snapshot });
       }
-      toast.success(type === "pdf" ? "PDF exported." : "Poster exported.");
+      toast.success(type === "pdf" ? t("PDF exported.") : t("Poster exported."));
     } catch (error) {
-      toast.error(`Export failed: ${getErrorMessage(error)}`);
+      toast.error(t("Export failed:") + " " + getErrorMessage(error));
     } finally {
       setIsExporting(null);
     }
@@ -809,27 +840,27 @@ export default function ReportPage() {
             <div className="flex flex-wrap gap-2" data-export-ignore="true">
               <Button variant="ghost" size="sm" className="h-9" onClick={() => router.push("/")}>
                 <ArrowLeft className="mr-1 size-4" />
-                Back Home
+                {t("Back Home")}
               </Button>
               <Button variant="outline" size="sm" className="h-9" onClick={() => router.push("/compare")}>
-                Saved Reports / Compare
+                {t("Saved Reports / Compare")}
               </Button>
               <Button variant="outline" size="sm" className="h-9" onClick={() => router.push("/history")}>
-                Search History
+                {t("Search History")}
               </Button>
             </div>
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge className="bg-accent/15 text-accent">Report Snapshot</Badge>
+                <Badge className="bg-accent/15 text-accent">{t("Report Snapshot")}</Badge>
                 <Badge variant="outline" className="border-border/70 text-muted-foreground">
-                  {snapshot.inputs.mode.toUpperCase()}
+                  {displaySnapshot.inputs.mode.toUpperCase()}
                 </Badge>
                 <Badge variant="outline" className="border-border/70 text-muted-foreground">
-                  {formatTimestamp(snapshot.createdAt)}
+                  {formatTimestamp(displaySnapshot.createdAt)}
                 </Badge>
               </div>
               <h1 className="font-[family-name:var(--font-space-grotesk)] text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-                {snapshot.inputs.address || "Inspection Report"}
+                {displaySnapshot.inputs.address || t("Inspection Report")}
               </h1>
               <p className="max-w-3xl text-sm text-muted-foreground">
                 AI-assisted report snapshot for the current browser only. Refresh-safe, but not a public share link.
@@ -856,15 +887,15 @@ export default function ReportPage() {
         <div className="grid gap-4 xl:grid-cols-2">
           <Card className="border-border/70 bg-card/85">
             <CardHeader>
-              <CardDescription>1. Property Risk Score</CardDescription>
-              <CardTitle>Beta / Heuristic risk index</CardTitle>
+              <CardDescription>{t("1. Property Risk Score")}</CardDescription>
+              <CardTitle>{t("Beta / Heuristic risk index")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-end gap-4">
-                <div className={`text-5xl font-semibold ${getRiskTone(snapshot.propertyRiskScore)}`}>
-                  {snapshot.propertyRiskScore}
+                <div className={`text-5xl font-semibold ${getRiskTone(displaySnapshot.propertyRiskScore)}`}>
+                  {displaySnapshot.propertyRiskScore}
                 </div>
-                <div className="pb-1 text-sm text-muted-foreground">out of 100</div>
+                <div className="pb-1 text-sm text-muted-foreground">{t("out of 100")}</div>
               </div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {Object.entries(severityBreakdown).map(([severity, count]) => (
@@ -878,7 +909,7 @@ export default function ReportPage() {
                 {riskState.drivers.length > 0 ? (
                   riskState.drivers.map((driver) => <div key={driver}>{driver}</div>)
                 ) : (
-                  <div>No hazards detected. Coverage may still be incomplete.</div>
+                  <div>{t("No hazards detected. Coverage may still be incomplete.")}</div>
                 )}
               </div>
             </CardContent>
@@ -886,21 +917,21 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85">
             <CardHeader>
-              <CardDescription>2. Fit Score</CardDescription>
-              <CardTitle>Suitability against current signals</CardTitle>
+              <CardDescription>{t("2. Fit Score")}</CardDescription>
+              <CardTitle>{t("Suitability against current signals")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {snapshot.fitScore ? (
+              {displaySnapshot.fitScore ? (
                 <>
                   <div className="flex items-end gap-4">
-                    <div className="text-5xl font-semibold text-accent">{snapshot.fitScore.score}</div>
+                    <div className="text-5xl font-semibold text-accent">{displaySnapshot.fitScore.score}</div>
                     <div className="pb-1 text-sm text-muted-foreground">out of 100</div>
                   </div>
-                  <p className="text-sm text-muted-foreground">{snapshot.fitScore.summary}</p>
-                  {snapshot.fitScore.drivers.length > 0 ? (
-                    <ExpandableDetails label="Fit score details">
+                  <p className="text-sm text-muted-foreground">{displaySnapshot.fitScore.summary}</p>
+                  {displaySnapshot.fitScore.drivers.length > 0 ? (
+                    <ExpandableDetails label={t("Fit score details")}>
                       <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
-                        {snapshot.fitScore.drivers.map((driver) => (
+                        {displaySnapshot.fitScore.drivers.map((driver) => (
                           <li key={driver}>{driver}</li>
                         ))}
                       </ul>
@@ -915,22 +946,22 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85 xl:col-span-2" data-export-ignore="true">
             <CardHeader>
-              <CardDescription>3. Decision Recommendation</CardDescription>
-              <CardTitle>Should you proceed with this property?</CardTitle>
+              <CardDescription>{t("3. Decision Recommendation")}</CardDescription>
+              <CardTitle>{t("Should you proceed with this property?")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {snapshot.recommendation ? (
+              {displaySnapshot.recommendation ? (
                 <>
                   <div className="flex flex-wrap items-center gap-3">
                     <Badge className="bg-accent/15 px-3 py-1 text-sm text-accent">
-                      {snapshot.recommendation.outcome}
+                      {displaySnapshot.recommendation.outcome}
                     </Badge>
-                    <div className="text-sm text-muted-foreground">{snapshot.recommendation.summary}</div>
+                    <div className="text-sm text-muted-foreground">{displaySnapshot.recommendation.summary}</div>
                   </div>
-                  {snapshot.recommendation.reasons.length > 0 ? (
+                  {displaySnapshot.recommendation.reasons.length > 0 ? (
                     <ExpandableDetails label="Decision details">
                       <ul className="grid list-disc gap-2 pl-5 text-sm text-muted-foreground">
-                        {snapshot.recommendation.reasons.map((reason) => (
+                        {displaySnapshot.recommendation.reasons.map((reason) => (
                           <li key={reason}>{reason}</li>
                         ))}
                       </ul>
@@ -949,24 +980,24 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85 xl:col-span-2">
             <CardHeader>
-              <CardDescription>4. Hazard List</CardDescription>
-              <CardTitle>{snapshot.hazards.length > 0 ? `${snapshot.hazards.length} detected hazards` : "No hazards detected"}</CardTitle>
+              <CardDescription>{t("4. Hazard List")}</CardDescription>
+              <CardTitle>{displaySnapshot.hazards.length > 0 ? `${displaySnapshot.hazards.length} detected hazards` : "No hazards detected"}</CardTitle>
             </CardHeader>
             <CardContent>
-              {snapshot.hazards.length === 0 ? (
+              {displaySnapshot.hazards.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
                   No hazards detected in the current snapshot. Keep using a standard physical inspection checklist before signing.
                 </div>
               ) : (
                 <div className="grid gap-3">
-                  {snapshot.hazards.map((hazard) => (
+                  {displaySnapshot.hazards.map((hazard) => (
                     <div
                       key={hazard.id}
                       className="grid gap-3 rounded-2xl border border-border/70 bg-muted/20 p-3 sm:grid-cols-[112px_1fr]"
                     >
                       <div className="aspect-[4/3] overflow-hidden rounded-xl border border-border/70 bg-card">
                         <ThumbnailPreview
-                          snapshot={snapshot}
+                          snapshot={displaySnapshot}
                           hazard={hazard}
                           signedThumbnailUrls={signedThumbnailUrls}
                         />
@@ -986,7 +1017,7 @@ export default function ReportPage() {
                         <div className="text-sm text-foreground">{hazard.description}</div>
                         {hazard.estimatedCost ? (
                           <div className="text-xs text-muted-foreground">
-                            Estimated cost: {hazard.estimatedCost.currency} {hazard.estimatedCost.amount} · {hazard.estimatedCost.reason}
+                            {t("Estimated cost")}: {hazard.estimatedCost.currency} {hazard.estimatedCost.amount} · {hazard.estimatedCost.reason}
                           </div>
                         ) : null}
                       </div>
@@ -997,14 +1028,14 @@ export default function ReportPage() {
             </CardContent>
           </Card>
 
-          {snapshot.roomScenes3d?.length ? (
+          {displaySnapshot.roomScenes3d?.length ? (
             <Card className="border-border/70 bg-card/85 xl:col-span-2">
               <CardHeader>
-                <CardDescription>4A. 3D Room View</CardDescription>
-                <CardTitle>Approximate room scenes from the on-site 3D scan studio</CardTitle>
+                <CardDescription>{t("4A. 3D Room View")}</CardDescription>
+                <CardTitle>{t("Approximate room scenes from the on-site 3D scan studio")}</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-6">
-                {snapshot.roomScenes3d.map((scene) => (
+                {displaySnapshot.roomScenes3d.map((scene) => (
                   <RoomSceneViewer
                     key={scene.sceneId}
                     scene={scene}
@@ -1023,16 +1054,16 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85">
             <CardHeader>
-              <CardDescription>5. Area Intelligence</CardDescription>
-              <CardTitle>Location and transit signals</CardTitle>
+              <CardDescription>{t("5. Area Intelligence")}</CardDescription>
+              <CardTitle>{t("Location and transit signals")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 text-sm text-muted-foreground">
-              {snapshot.intelligence?.geoAnalysis ? (
+              {displaySnapshot.intelligence?.geoAnalysis ? (
                 <>
-                  {snapshot.exportAssets?.staticMapImageBase64 ? (
+                  {displaySnapshot.exportAssets?.staticMapImageBase64 ? (
                     <div className="overflow-hidden rounded-2xl border border-border/70 bg-card">
                       <Image
-                        src={snapshot.exportAssets.staticMapImageBase64}
+                        src={displaySnapshot.exportAssets.staticMapImageBase64}
                         alt="Area map"
                         width={640}
                         height={360}
@@ -1045,20 +1076,20 @@ export default function ReportPage() {
                   ) : null}
                   <div className="flex flex-wrap gap-2">
                     <Badge variant="outline" className="border-border/70 text-foreground">
-                      Noise: {snapshot.intelligence.geoAnalysis.noiseRisk}
+                      Noise: {displaySnapshot.intelligence.geoAnalysis.noiseRisk}
                     </Badge>
                     <Badge variant="outline" className="border-border/70 text-foreground">
-                      Transit: {snapshot.intelligence.geoAnalysis.transitScore}
+                      Transit: {displaySnapshot.intelligence.geoAnalysis.transitScore}
                     </Badge>
                   </div>
                   <div>
-                    {snapshot.intelligence.geoAnalysis.warning ??
+                    {displaySnapshot.intelligence.geoAnalysis.warning ??
                       "Transit and local condition signals are summarized below."}
                   </div>
                   {nearbyEssentials.length > 0 ? (
                     <div className="grid gap-3">
                       <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                        Nearby Essentials
+                        {t("Nearby Essentials")}
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
                         {nearbyEssentials.map((place) => (
@@ -1113,7 +1144,7 @@ export default function ReportPage() {
                                   rel="noreferrer noopener"
                                   className="inline-block text-xs text-accent underline-offset-4 hover:underline"
                                 >
-                                  View on Google Maps
+                                  {t("View on Google Maps")}
                                 </a>
                               ) : null}
                             </div>
@@ -1122,28 +1153,28 @@ export default function ReportPage() {
                       </div>
                     </div>
                   ) : null}
-                  {(snapshot.intelligence.geoAnalysis.keySignals?.length ||
-                    snapshot.intelligence.geoAnalysis.nearbyTransit.length > 0 ||
-                    snapshot.intelligence.geoAnalysis.destinationConvenience.length > 0) ? (
+                  {(displaySnapshot.intelligence.geoAnalysis.keySignals?.length ||
+                    displaySnapshot.intelligence.geoAnalysis.nearbyTransit.length > 0 ||
+                    displaySnapshot.intelligence.geoAnalysis.destinationConvenience.length > 0) ? (
                     <ExpandableDetails label="Area details">
                       <div className="space-y-4 text-sm text-muted-foreground">
-                        {snapshot.intelligence.geoAnalysis.keySignals?.length ? (
+                        {displaySnapshot.intelligence.geoAnalysis.keySignals?.length ? (
                           <ul className="list-disc space-y-2 pl-5">
-                            {snapshot.intelligence.geoAnalysis.keySignals.map((item) => (
+                            {displaySnapshot.intelligence.geoAnalysis.keySignals.map((item) => (
                               <li key={item}>{item}</li>
                             ))}
                           </ul>
                         ) : null}
                         <ul className="list-disc space-y-2 pl-5">
-                          {snapshot.intelligence.geoAnalysis.nearbyTransit.length > 0 ? (
-                            snapshot.intelligence.geoAnalysis.nearbyTransit.map((item) => <li key={item}>{item}</li>)
+                          {displaySnapshot.intelligence.geoAnalysis.nearbyTransit.length > 0 ? (
+                            displaySnapshot.intelligence.geoAnalysis.nearbyTransit.map((item) => <li key={item}>{item}</li>)
                           ) : (
                             <li>Nearby transit details are limited.</li>
                           )}
                         </ul>
-                        {snapshot.intelligence.geoAnalysis.destinationConvenience.length > 0 ? (
+                        {displaySnapshot.intelligence.geoAnalysis.destinationConvenience.length > 0 ? (
                           <ul className="list-disc space-y-2 border-t border-border/60 pt-3 pl-5">
-                            {snapshot.intelligence.geoAnalysis.destinationConvenience.map((item) => (
+                            {displaySnapshot.intelligence.geoAnalysis.destinationConvenience.map((item) => (
                               <li key={item}>{item}</li>
                             ))}
                           </ul>
@@ -1160,30 +1191,30 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85">
             <CardHeader>
-              <CardDescription>6. Community Feedback</CardDescription>
-              <CardTitle>Public renter sentiment and local discussion</CardTitle>
+              <CardDescription>{t("6. Community Feedback")}</CardDescription>
+              <CardTitle>{t("Public renter sentiment and local discussion")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 text-sm text-muted-foreground">
-              {snapshot.intelligence?.communityInsight ? (
+              {displaySnapshot.intelligence?.communityInsight ? (
                 <>
                   <Badge variant="outline" className="border-border/70 text-foreground">
-                    Sentiment: {snapshot.intelligence.communityInsight.sentiment}
+                    Sentiment: {displaySnapshot.intelligence.communityInsight.sentiment}
                   </Badge>
-                  <div>{snapshot.intelligence.communityInsight.summary}</div>
-                  {(snapshot.intelligence.communityInsight.highlights?.length ||
-                    snapshot.intelligence.communityInsight.citations.length > 0) ? (
+                  <div>{displaySnapshot.intelligence.communityInsight.summary}</div>
+                  {(displaySnapshot.intelligence.communityInsight.highlights?.length ||
+                    displaySnapshot.intelligence.communityInsight.citations.length > 0) ? (
                     <ExpandableDetails label="Community details">
                       <div className="space-y-4">
-                        {snapshot.intelligence.communityInsight.highlights?.length ? (
+                        {displaySnapshot.intelligence.communityInsight.highlights?.length ? (
                           <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
-                            {snapshot.intelligence.communityInsight.highlights.map((item) => (
+                            {displaySnapshot.intelligence.communityInsight.highlights.map((item) => (
                               <li key={item}>{item}</li>
                             ))}
                           </ul>
                         ) : null}
                         <div className="space-y-2 text-xs text-muted-foreground">
-                          {snapshot.intelligence.communityInsight.citations.length > 0 ? (
-                            snapshot.intelligence.communityInsight.citations.map((citation) => (
+                          {displaySnapshot.intelligence.communityInsight.citations.length > 0 ? (
+                            displaySnapshot.intelligence.communityInsight.citations.map((citation) => (
                               <a
                                 key={citation.sourceId}
                                 href={citation.url}
@@ -1210,51 +1241,51 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85">
             <CardHeader>
-              <CardDescription>7. Agency Background</CardDescription>
-              <CardTitle>Public reputation and negotiation leverage</CardTitle>
+              <CardDescription>{t("7. Agency Background")}</CardDescription>
+              <CardTitle>{t("Public reputation and negotiation leverage")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 text-sm text-muted-foreground">
-              {snapshot.intelligence?.agencyBackground ? (
+              {displaySnapshot.intelligence?.agencyBackground ? (
                 <>
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="outline" className="border-border/70 text-foreground">
-                      {snapshot.intelligence.agencyBackground.agencyName}
+                      {displaySnapshot.intelligence.agencyBackground.agencyName}
                     </Badge>
                     <Badge variant="outline" className="border-border/70 text-foreground">
-                      Sentiment {snapshot.intelligence.agencyBackground.sentimentScore.toFixed(1)}/5
+                      Sentiment {displaySnapshot.intelligence.agencyBackground.sentimentScore.toFixed(1)}/5
                     </Badge>
                   </div>
                   <div>
-                    {snapshot.intelligence.agencyBackground.summary ??
-                      snapshot.intelligence.agencyBackground.negotiationLeverage}
+                    {displaySnapshot.intelligence.agencyBackground.summary ??
+                      displaySnapshot.intelligence.agencyBackground.negotiationLeverage}
                   </div>
-                  {(snapshot.intelligence.agencyBackground.highlights?.length ||
-                    snapshot.intelligence.agencyBackground.commonComplaints.length > 0 ||
-                    snapshot.intelligence.agencyBackground.citations.length > 0) ? (
+                  {(displaySnapshot.intelligence.agencyBackground.highlights?.length ||
+                    displaySnapshot.intelligence.agencyBackground.commonComplaints.length > 0 ||
+                    displaySnapshot.intelligence.agencyBackground.citations.length > 0) ? (
                     <ExpandableDetails label="Agency details">
                       <div className="space-y-4">
                         <div className="text-sm text-muted-foreground">
-                          {snapshot.intelligence.agencyBackground.negotiationLeverage}
+                          {displaySnapshot.intelligence.agencyBackground.negotiationLeverage}
                         </div>
-                        {snapshot.intelligence.agencyBackground.highlights?.length ? (
+                        {displaySnapshot.intelligence.agencyBackground.highlights?.length ? (
                           <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
-                            {snapshot.intelligence.agencyBackground.highlights.map((item) => (
+                            {displaySnapshot.intelligence.agencyBackground.highlights.map((item) => (
                               <li key={item}>{item}</li>
                             ))}
                           </ul>
                         ) : null}
                         <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
-                          {snapshot.intelligence.agencyBackground.commonComplaints.length > 0 ? (
-                            snapshot.intelligence.agencyBackground.commonComplaints.map((complaint) => (
+                          {displaySnapshot.intelligence.agencyBackground.commonComplaints.length > 0 ? (
+                            displaySnapshot.intelligence.agencyBackground.commonComplaints.map((complaint) => (
                               <li key={complaint}>{complaint}</li>
                             ))
                           ) : (
                             <li>No common public complaint themes were retained.</li>
                           )}
                         </ul>
-                        {snapshot.intelligence.agencyBackground.citations.length > 0 ? (
+                        {displaySnapshot.intelligence.agencyBackground.citations.length > 0 ? (
                           <div className="space-y-2 text-xs text-muted-foreground">
-                            {snapshot.intelligence.agencyBackground.citations.map((citation) => (
+                            {displaySnapshot.intelligence.agencyBackground.citations.map((citation) => (
                               <a
                                 key={citation.sourceId}
                                 href={citation.url}
@@ -1279,29 +1310,29 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85 xl:col-span-2">
             <CardHeader>
-              <CardDescription>8. Map + Web Fusion</CardDescription>
-              <CardTitle>Combined signals from local map facts and public web evidence</CardTitle>
+              <CardDescription>{t("8. Map + Web Fusion")}</CardDescription>
+              <CardTitle>{t("Combined signals from local map facts and public web evidence")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 text-sm text-muted-foreground">
-              {snapshot.intelligence?.fusion ? (
+              {displaySnapshot.intelligence?.fusion ? (
                 <>
                   <div className="flex flex-wrap gap-2">
                     <Badge variant="outline" className="border-border/70 text-foreground">
-                      Confidence: {snapshot.intelligence.fusion.confidence}
+                      Confidence: {displaySnapshot.intelligence.fusion.confidence}
                     </Badge>
                     <Badge variant="outline" className="border-border/70 text-foreground">
-                      Map signals: {snapshot.intelligence.fusion.mapSignals.length}
+                      Map signals: {displaySnapshot.intelligence.fusion.mapSignals.length}
                     </Badge>
                     <Badge variant="outline" className="border-border/70 text-foreground">
-                      Web signals: {snapshot.intelligence.fusion.webSignals.length}
+                      Web signals: {displaySnapshot.intelligence.fusion.webSignals.length}
                     </Badge>
                   </div>
                   <div className="grid gap-4 lg:grid-cols-2">
                     <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
                       <div className="text-sm font-medium text-foreground">Map-grounded signals</div>
                       <div className="space-y-3">
-                        {snapshot.intelligence.fusion.mapSignals.length > 0 ? (
-                          snapshot.intelligence.fusion.mapSignals.map((signal) => (
+                        {displaySnapshot.intelligence.fusion.mapSignals.length > 0 ? (
+                          displaySnapshot.intelligence.fusion.mapSignals.map((signal) => (
                             <div key={`map-${signal.topic}-${signal.title}`} className="space-y-1">
                               <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
                                 {signal.title}
@@ -1324,8 +1355,8 @@ export default function ReportPage() {
                     <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
                       <div className="text-sm font-medium text-foreground">Web-grounded signals</div>
                       <div className="space-y-3">
-                        {snapshot.intelligence.fusion.webSignals.length > 0 ? (
-                          snapshot.intelligence.fusion.webSignals.map((signal) => (
+                        {displaySnapshot.intelligence.fusion.webSignals.length > 0 ? (
+                          displaySnapshot.intelligence.fusion.webSignals.map((signal) => (
                             <div key={`web-${signal.topic}-${signal.title}`} className="space-y-1">
                               <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
                                 {signal.title}
@@ -1346,10 +1377,10 @@ export default function ReportPage() {
                       </div>
                     </div>
                   </div>
-                  {snapshot.intelligence.fusion.conflicts.length > 0 ? (
+                  {displaySnapshot.intelligence.fusion.conflicts.length > 0 ? (
                     <ExpandableDetails label="Cross-source conflicts to verify">
                       <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
-                        {snapshot.intelligence.fusion.conflicts.map((conflict) => (
+                        {displaySnapshot.intelligence.fusion.conflicts.map((conflict) => (
                           <li key={conflict}>{conflict}</li>
                         ))}
                       </ul>
@@ -1364,12 +1395,12 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85">
             <CardHeader>
-              <CardDescription>9. Evidence & Confidence</CardDescription>
-              <CardTitle>What currently supports the recommendation</CardTitle>
+              <CardDescription>{t("9. Evidence & Confidence")}</CardDescription>
+              <CardTitle>{t("What currently supports the recommendation")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-muted-foreground">
-              {snapshot.evidenceSummary?.length ? (
-                snapshot.evidenceSummary.map((item, index) => (
+              {displaySnapshot.evidenceSummary?.length ? (
+                displaySnapshot.evidenceSummary.map((item, index) => (
                   <div key={`${item.type}-${index}`} className="rounded-xl border border-border/70 bg-muted/20 p-3">
                     <div className="flex items-center justify-between gap-3">
                       <Badge variant="outline" className="border-border/70 text-foreground">
@@ -1389,48 +1420,48 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85">
             <CardHeader>
-              <CardDescription>10. Inspection Coverage</CardDescription>
-              <CardTitle>How complete is the current inspection?</CardTitle>
+              <CardDescription>{t("10. Inspection Coverage")}</CardDescription>
+              <CardTitle>{t("How complete is the current inspection?")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 text-sm text-muted-foreground">
-              {snapshot.inspectionCoverage ? (
+              {displaySnapshot.inspectionCoverage ? (
                 <>
                   <div className="flex flex-wrap gap-2">
                     <Badge variant="outline" className="border-border/70 text-foreground">
-                      Confidence: {snapshot.inspectionCoverage.confidence}
+                      Confidence: {displaySnapshot.inspectionCoverage.confidence}
                     </Badge>
-                    {snapshot.inspectionCoverage.coverageStatus ? (
+                    {displaySnapshot.inspectionCoverage.coverageStatus ? (
                       <Badge variant="outline" className="border-border/70 text-foreground">
-                        Status: {snapshot.inspectionCoverage.coverageStatus}
+                        Status: {displaySnapshot.inspectionCoverage.coverageStatus}
                       </Badge>
                     ) : null}
-                    {snapshot.inspectionCoverage.roomsSeen.filter((room) => room !== "unknown").map((room) => (
+                    {displaySnapshot.inspectionCoverage.roomsSeen.filter((room) => room !== "unknown").map((room) => (
                       <Badge key={room} variant="outline" className="border-border/70 text-foreground">
                         {formatRoomTypeLabel(room)}
                       </Badge>
                     ))}
                   </div>
                   <div>
-                    {snapshot.inspectionCoverage.summary ??
-                      snapshot.inspectionCoverage.warning ??
+                    {displaySnapshot.inspectionCoverage.summary ??
+                      displaySnapshot.inspectionCoverage.warning ??
                       "Inspection coverage signals are summarized below."}
                   </div>
-                  {snapshot.inspectionCoverage.warning ? (
-                    <div className="text-xs text-muted-foreground">{snapshot.inspectionCoverage.warning}</div>
+                  {displaySnapshot.inspectionCoverage.warning ? (
+                    <div className="text-xs text-muted-foreground">{displaySnapshot.inspectionCoverage.warning}</div>
                   ) : null}
-                  {snapshot.inspectionCoverage.missingAreas.length > 0 ? (
+                  {displaySnapshot.inspectionCoverage.missingAreas.length > 0 ? (
                     <ExpandableDetails label="Coverage details">
                       <ul className="list-disc space-y-2 pl-5">
-                        {snapshot.inspectionCoverage.missingAreas.map((item) => (
+                        {displaySnapshot.inspectionCoverage.missingAreas.map((item) => (
                           <li key={item}>{item}</li>
                         ))}
                       </ul>
                     </ExpandableDetails>
                   ) : null}
-                  {snapshot.inspectionCoverage.roomSummaries?.length ? (
+                  {displaySnapshot.inspectionCoverage.roomSummaries?.length ? (
                     <ExpandableDetails label="Room coverage summary">
                       <div className="grid gap-3">
-                        {snapshot.inspectionCoverage.roomSummaries.map((roomSummary) => (
+                        {displaySnapshot.inspectionCoverage.roomSummaries.map((roomSummary) => (
                           <div
                             key={`${roomSummary.roomType}-${roomSummary.coverageStatus}`}
                             className="rounded-xl border border-border/70 bg-muted/20 p-3"
@@ -1458,14 +1489,14 @@ export default function ReportPage() {
             </CardContent>
           </Card>
 
-          {snapshot.reportEvidenceBasis?.length ? (
+          {displaySnapshot.reportEvidenceBasis?.length ? (
             <Card className="border-border/70 bg-card/85 xl:col-span-2">
               <CardHeader>
-                <CardDescription>11. Room Evidence Basis</CardDescription>
-                <CardTitle>Why AI considers each room complete or incomplete</CardTitle>
+                <CardDescription>{t("11. Room Evidence Basis")}</CardDescription>
+                <CardTitle>{t("Why AI considers each room complete or incomplete")}</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-4">
-                {snapshot.reportEvidenceBasis.map((basis) => (
+                {displaySnapshot.reportEvidenceBasis.map((basis) => (
                   <div
                     key={`${basis.roomType}-${basis.verdict.status}`}
                     className="rounded-2xl border border-border/70 bg-muted/20 p-4"
@@ -1521,7 +1552,7 @@ export default function ReportPage() {
                               </li>
                             ))
                           ) : (
-                            <li>No hazards were confirmed from this room's captured evidence.</li>
+                            <li>No hazards were confirmed from this room&apos;s captured evidence.</li>
                           )}
                         </ul>
                       </div>
@@ -1562,14 +1593,14 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85 xl:col-span-2">
             <CardHeader>
-              <CardDescription>12. Pre-lease Action Guide</CardDescription>
-              <CardTitle>What to negotiate or re-check next</CardTitle>
+              <CardDescription>{t("12. Pre-lease Action Guide")}</CardDescription>
+              <CardTitle>{t("What to negotiate or re-check next")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {snapshot.preLeaseActionGuide ? (
+              {displaySnapshot.preLeaseActionGuide ? (
                 <>
                   <div className="text-sm text-muted-foreground">
-                    {snapshot.preLeaseActionGuide.summary ??
+                    {displaySnapshot.preLeaseActionGuide.summary ??
                       "Use the next-step checklist below before committing to this property."}
                   </div>
                   <ExpandableDetails label="Action guide details">
@@ -1577,8 +1608,8 @@ export default function ReportPage() {
                       <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
                         <div className="text-sm font-medium text-foreground">Negotiation points</div>
                         <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
-                          {snapshot.preLeaseActionGuide.negotiatePoints.length > 0 ? (
-                            snapshot.preLeaseActionGuide.negotiatePoints.map((point) => <li key={point}>{point}</li>)
+                          {displaySnapshot.preLeaseActionGuide.negotiatePoints.length > 0 ? (
+                            displaySnapshot.preLeaseActionGuide.negotiatePoints.map((point) => <li key={point}>{point}</li>)
                           ) : (
                             <li>No specific negotiation points have been generated.</li>
                           )}
@@ -1587,8 +1618,8 @@ export default function ReportPage() {
                       <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
                         <div className="text-sm font-medium text-foreground">Further inspection items</div>
                         <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
-                          {snapshot.preLeaseActionGuide.furtherInspectionItems.length > 0 ? (
-                            snapshot.preLeaseActionGuide.furtherInspectionItems.map((item) => <li key={item}>{item}</li>)
+                          {displaySnapshot.preLeaseActionGuide.furtherInspectionItems.length > 0 ? (
+                            displaySnapshot.preLeaseActionGuide.furtherInspectionItems.map((item) => <li key={item}>{item}</li>)
                           ) : (
                             <li>No further inspection items have been generated.</li>
                           )}
@@ -1605,8 +1636,8 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85 xl:col-span-2">
             <CardHeader>
-              <CardDescription>13. Inspection Checklist & Entry Notes</CardDescription>
-              <CardTitle>Structured notes captured during the inspection</CardTitle>
+              <CardDescription>{t("13. Inspection Checklist & Entry Notes")}</CardDescription>
+              <CardTitle>{t("Structured notes captured during the inspection")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               {checklistSections.length > 0 ? (
@@ -1649,49 +1680,49 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85 xl:col-span-2">
             <CardHeader>
-              <CardDescription>13. RAG Knowledge Base Guidance</CardDescription>
-              <CardTitle>Private renter corpus guidance with retrieval workflow trace</CardTitle>
+              <CardDescription>{t("13. RAG Knowledge Base Guidance")}</CardDescription>
+              <CardTitle>{t("Private renter corpus guidance with retrieval workflow trace")}</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-3">
-              {snapshot.knowledgeAnswer ? (
+              {displaySnapshot.knowledgeAnswer ? (
                 <>
                   <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
-                    <div className="text-sm font-medium text-foreground">{snapshot.knowledgeAnswer.summary}</div>
+                    <div className="text-sm font-medium text-foreground">{displaySnapshot.knowledgeAnswer.summary}</div>
                     <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-muted-foreground">
-                      {snapshot.knowledgeAnswer.keyPoints.map((point) => (
+                      {displaySnapshot.knowledgeAnswer.keyPoints.map((point) => (
                         <li key={point}>{point}</li>
                       ))}
                     </ul>
                   </div>
-                  {snapshot.knowledgeTrace ? (
+                  {displaySnapshot.knowledgeTrace ? (
                     <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
                       <div className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
                         Workflow Trace
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        <Badge variant="secondary">mode: {snapshot.knowledgeTrace.mode}</Badge>
-                        <Badge variant="secondary">collection: {snapshot.knowledgeTrace.collection ?? "n/a"}</Badge>
-                        <Badge variant="secondary">retrieved: {snapshot.knowledgeTrace.retrievedCount}</Badge>
-                        <Badge variant="secondary">reranked: {snapshot.knowledgeTrace.rerankedCount}</Badge>
+                        <Badge variant="secondary">mode: {displaySnapshot.knowledgeTrace.mode}</Badge>
+                        <Badge variant="secondary">collection: {displaySnapshot.knowledgeTrace.collection ?? "n/a"}</Badge>
+                        <Badge variant="secondary">retrieved: {displaySnapshot.knowledgeTrace.retrievedCount}</Badge>
+                        <Badge variant="secondary">reranked: {displaySnapshot.knowledgeTrace.rerankedCount}</Badge>
                         <Badge variant="secondary">
-                          rerank: {snapshot.knowledgeTrace.rerankUsed ? snapshot.knowledgeTrace.rerankModel ?? "on" : "off"}
+                          rerank: {displaySnapshot.knowledgeTrace.rerankUsed ? displaySnapshot.knowledgeTrace.rerankModel ?? "on" : "off"}
                         </Badge>
                         <Badge variant="secondary">
-                          answer: {snapshot.knowledgeTrace.generationUsed ? snapshot.knowledgeTrace.answerModel ?? "on" : "fallback"}
+                          answer: {displaySnapshot.knowledgeTrace.generationUsed ? displaySnapshot.knowledgeTrace.answerModel ?? "on" : "fallback"}
                         </Badge>
                       </div>
-                      {snapshot.knowledgeTrace.failures?.length ? (
+                      {displaySnapshot.knowledgeTrace.failures?.length ? (
                         <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
-                          {snapshot.knowledgeTrace.failures.map((failure) => (
+                          {displaySnapshot.knowledgeTrace.failures.map((failure) => (
                             <li key={failure}>{failure}</li>
                           ))}
                         </ul>
                       ) : null}
                     </div>
                   ) : null}
-                  {snapshot.knowledgeCitations?.length ? (
+                  {displaySnapshot.knowledgeCitations?.length ? (
                     <div className="grid gap-3">
-                      {snapshot.knowledgeCitations.map((citation) => (
+                      {displaySnapshot.knowledgeCitations.map((citation) => (
                         <div
                           key={`${citation.sourceId}-${citation.chunkId ?? "doc"}`}
                           className="rounded-xl border border-border/70 bg-muted/20 p-4"
@@ -1706,7 +1737,7 @@ export default function ReportPage() {
                     </div>
                   ) : null}
                   <div className="grid gap-3">
-                    {snapshot.knowledgeMatches?.map((match) => (
+                    {displaySnapshot.knowledgeMatches?.map((match) => (
                       <div key={`${match.sourceId}-${match.chunkId ?? match.title}`} className="rounded-xl border border-border/70 bg-muted/20 p-4">
                         <div className="text-sm font-medium text-foreground">{match.title}</div>
                         <div className="mt-2 text-sm text-muted-foreground">{match.snippet}</div>
@@ -1735,28 +1766,28 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85 xl:col-span-2">
             <CardHeader>
-              <CardDescription>14. People & Paperwork Checks</CardDescription>
-              <CardTitle>Compliant due-diligence items before you commit</CardTitle>
+              <CardDescription>{t("14. People & Paperwork Checks")}</CardDescription>
+              <CardTitle>{t("Compliant due-diligence items before you commit")}</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 lg:grid-cols-2">
               <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
                 <div className="text-sm font-medium text-foreground">Checklist</div>
                 <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
-                  {snapshot.paperworkChecks?.checklist.map((item) => <li key={item}>{item}</li>)}
+                  {displaySnapshot.paperworkChecks?.checklist.map((item) => <li key={item}>{item}</li>)}
                 </ul>
               </div>
               <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
                 <div className="text-sm font-medium text-foreground">Risk Flags</div>
                 <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
-                  {snapshot.paperworkChecks?.riskFlags.length ? (
-                    snapshot.paperworkChecks.riskFlags.map((item) => <li key={item}>{item}</li>)
+                  {displaySnapshot.paperworkChecks?.riskFlags.length ? (
+                    displaySnapshot.paperworkChecks.riskFlags.map((item) => <li key={item}>{item}</li>)
                   ) : (
                     <li>No extra paperwork red flags were identified from the current snapshot.</li>
                   )}
                 </ul>
                 <div className="pt-2 text-sm font-medium text-foreground">Required Documents</div>
                 <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
-                  {snapshot.paperworkChecks?.requiredDocuments.map((item) => <li key={item}>{item}</li>)}
+                  {displaySnapshot.paperworkChecks?.requiredDocuments.map((item) => <li key={item}>{item}</li>)}
                 </ul>
               </div>
             </CardContent>
@@ -1764,8 +1795,8 @@ export default function ReportPage() {
 
           <Card className="border-border/70 bg-card/85 xl:col-span-2">
             <CardHeader>
-              <CardDescription>15. Export Actions</CardDescription>
-              <CardTitle>Export a stable PDF or share poster</CardTitle>
+              <CardDescription>{t("15. Export Actions")}</CardDescription>
+              <CardTitle>{t("Export a stable PDF or share poster")}</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-3">
               <Button
@@ -1774,7 +1805,7 @@ export default function ReportPage() {
                 disabled={!isReportStable || isExporting !== null}
               >
                 <FileDown className="mr-2 size-4" />
-                {isExporting === "pdf" ? "Exporting PDF..." : "Export PDF"}
+                {isExporting === "pdf" ? t("Exporting PDF...") : t("Export PDF")}
               </Button>
               <Button
                 variant="outline"
@@ -1782,7 +1813,7 @@ export default function ReportPage() {
                 disabled={!isReportStable || isExporting !== null}
               >
                 <FileImage className="mr-2 size-4" />
-                {isExporting === "poster" ? "Exporting Poster..." : "Export Poster"}
+                {isExporting === "poster" ? t("Exporting Poster...") : t("Export Poster")}
               </Button>
               <div className="min-w-full text-xs text-muted-foreground">
                 {isReportStable
@@ -1796,7 +1827,7 @@ export default function ReportPage() {
         <div className="rounded-2xl border border-border/70 bg-card/65 px-4 py-4 text-sm text-muted-foreground">
           <div className="mb-2 flex items-center gap-2 text-foreground">
             <ShieldAlert className="size-4 text-accent" />
-            Disclaimer
+            {t("Disclaimer")}
           </div>
           RentRadar is an AI-assisted screening tool and does not replace a licensed building inspector. All
           findings and cost estimates are indicative only.

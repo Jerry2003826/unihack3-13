@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { RadarLoader } from "@/components/shared/RadarLoader";
 import { publicAppConfig } from "@/lib/config/public";
+import { useI18n } from "@/lib/i18n";
 import { useSessionStore } from "@/store/useSessionStore";
 import { getRadarTimeoutFallback, DEFAULT_DEMO_INTELLIGENCE } from "@/lib/constants/fallback";
 import { toast } from "sonner";
@@ -14,9 +15,10 @@ function getErrorMessage(error: unknown): string {
 
 export default function RadarPage() {
   const router = useRouter();
+  const { t } = useI18n();
   const { address, agency, listingUrl, coordinates, targetDestinations, preferenceProfile, isDemoMode, setIntelligence } = useSessionStore();
-  
-  const [statusText, setStatusText] = useState("Initializing scan...");
+
+  const [statusText, setStatusText] = useState(t("Initializing scan..."));
   const hasFetched = useRef(false);
 
   useEffect(() => {
@@ -32,7 +34,7 @@ export default function RadarPage() {
     async function fetchIntelligence() {
       // Demo Mode
       if (isDemoMode) {
-        setStatusText("Loading demo intelligence...");
+        setStatusText(t("Loading demo intelligence..."));
         // Simulate network delay
         await new Promise((r) => setTimeout(r, 2000));
         
@@ -53,7 +55,7 @@ export default function RadarPage() {
       }
 
       // Real Mode
-      setStatusText("Gathering property intelligence...");
+      setStatusText(t("Gathering property intelligence..."));
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 20000);
 
@@ -87,7 +89,7 @@ export default function RadarPage() {
         clearTimeout(timeoutId);
         console.warn("Intelligence fetch failed or timed out:", getErrorMessage(err));
         // Fallback
-        toast.info("Quick local summary loaded. Deeper checks will continue in the report.");
+        toast.info(t("Quick local summary loaded. Deeper checks will continue in the report."));
         setIntelligence(getRadarTimeoutFallback(address, agency));
       }
 
@@ -95,13 +97,13 @@ export default function RadarPage() {
     }
 
     fetchIntelligence();
-  }, [address, agency, listingUrl, coordinates, isDemoMode, setIntelligence, targetDestinations, preferenceProfile, router]);
+  }, [address, agency, listingUrl, coordinates, isDemoMode, setIntelligence, targetDestinations, preferenceProfile, router, t]);
 
   return (
     <RadarLoader
-      title="Property Radar"
+      title={t("Property Radar")}
       statusText={statusText}
-      description="Checking local community feedback, transit, and agency background..."
+      description={t("Checking local community feedback, transit, and agency background...")}
     />
   );
 }

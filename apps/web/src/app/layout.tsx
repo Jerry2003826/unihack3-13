@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Geist_Mono, Manrope, Space_Grotesk } from "next/font/google";
 import { ThemeProvider } from "next-themes";
+import { I18nProvider } from "@/components/providers/I18nProvider";
 import { StoreHydrationGate } from "@/components/providers/StoreHydrationGate";
+import { LanguageSwitcher } from "@/components/shared/LanguageSwitcher";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
@@ -41,10 +43,15 @@ export default function RootLayout({
       <body
         className={`${bodyFont.variable} ${headingFont.variable} ${monoFont.variable} min-h-screen bg-background text-foreground antialiased`}
       >
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
-          <StoreHydrationGate>{children}</StoreHydrationGate>
-          <Toaster position="top-center" richColors />
-        </ThemeProvider>
+        <I18nProvider>
+          <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+            <StoreHydrationGate>
+              <LanguageSwitcher />
+              {children}
+            </StoreHydrationGate>
+            <Toaster position="top-center" richColors />
+          </ThemeProvider>
+        </I18nProvider>
       </body>
     </html>
   );

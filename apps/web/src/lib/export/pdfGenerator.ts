@@ -433,7 +433,6 @@ function buildEnhancedPdfBlob(snapshot: ReportSnapshot): Blob {
     }
 
     // Two-column: Negotiate | Further Inspection
-    const colStartY = y;
     let leftY = y;
     let rightY = y;
 
