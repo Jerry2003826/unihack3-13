@@ -27,6 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useI18n } from "@/lib/i18n";
 import { toast } from "sonner";
 
 const MapPicker = dynamic(() => import("@/components/manual/ManualMapPicker").then((mod) => mod.ManualMapPicker), {
@@ -38,21 +39,19 @@ const MAX_IMAGE_COUNT = 8;
 const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Unknown error";
-}
+type ImageValidationError = { key: string; filename: string } | null;
 
-function getImageValidationError(file: File): string | null {
+function getImageValidationErrorKey(file: File): ImageValidationError {
   if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
-    return `${file.name} is not a supported image type.`;
+    return { key: "{filename} is not a supported image type.", filename: file.name };
   }
 
   if (file.size === 0) {
-    return `${file.name} is empty.`;
+    return { key: "{filename} is empty.", filename: file.name };
   }
 
   if (file.size > MAX_IMAGE_SIZE_BYTES) {
-    return `${file.name} exceeds the 10 MB upload limit.`;
+    return { key: "{filename} exceeds the 10 MB upload limit.", filename: file.name };
   }
 
   return null;
@@ -93,6 +92,7 @@ function buildManualIntelligenceFallback(args: {
 
 export default function ManualPage() {
   const router = useRouter();
+  const { t } = useI18n();
   const {
     inspectionMode,
     address: draftAddress,
@@ -187,7 +187,7 @@ export default function ManualPage() {
       setLocationStatus(geocoded.provider === "fallback" ? "fallback" : "success");
     } catch (error) {
       setLocationStatus("error");
-      toast.error(error instanceof Error ? error.message : "Failed to resolve address.");
+      toast.error(error instanceof Error ? error.message : t("Failed to resolve address."));
     }
   }
 
@@ -197,10 +197,10 @@ export default function ManualPage() {
     try {
       const nextCoordinates = await requestCurrentLocation();
       await resolveAddressFromCoordinates(nextCoordinates, true);
-      toast.success("Current location applied.");
+      toast.success(t("Current location applied."));
     } catch (error) {
       setLocationStatus("error");
-      toast.error(error instanceof Error ? error.message : "Unable to access current location.");
+      toast.error(error instanceof Error ? error.message : t("Unable to access current location."));
     }
   }
 
@@ -211,14 +211,15 @@ export default function ManualPage() {
 
     const files = Array.from(event.target.files);
     if (images.length + files.length > MAX_IMAGE_COUNT) {
-      toast.error(`Maximum ${MAX_IMAGE_COUNT} images allowed`);
+      toast.error(t("Maximum {count} images allowed", { count: MAX_IMAGE_COUNT }));
       event.target.value = "";
       return;
     }
 
-    const firstInvalidFile = files.find((file) => getImageValidationError(file) !== null);
-    if (firstInvalidFile) {
-      toast.error(getImageValidationError(firstInvalidFile) || "Unsupported file");
+    const firstInvalid = files.find((file) => getImageValidationErrorKey(file) !== null);
+    if (firstInvalid) {
+      const err = getImageValidationErrorKey(firstInvalid);
+      toast.error(err ? t(err.key, { filename: err.filename }) : t("Unsupported file"));
       event.target.value = "";
       return;
     }
@@ -238,17 +239,17 @@ export default function ManualPage() {
 
   const handleGenerateReport = async () => {
     if (images.length === 0) {
-      toast.error("Please select at least 1 image");
+      toast.error(t("Please select at least 1 image"));
       return;
     }
 
     if (!address.trim() && !coordinates) {
-      toast.error("Please provide either an address or tap a location on the map");
+      toast.error(t("Please provide either an address or tap a location on the map"));
       return;
     }
 
     setIsSubmitting(true);
-    setProgressMsg("Preparing inspection details...");
+    setProgressMsg(t("Preparing inspection details..."));
 
     let preparedImages: Awaited<ReturnType<typeof prepareManualImages>> = [];
 
@@ -286,7 +287,7 @@ export default function ManualPage() {
       }
 
       if (!activeInspectionId) {
-        throw new Error("Failed to create inspection context.");
+        throw new Error(t("Failed to create inspection context."));
       }
 
       if (!manualSubmissionContext) {
@@ -308,7 +309,7 @@ export default function ManualPage() {
           }
         }
 
-        setProgressMsg("Uploading images to secure storage...");
+        setProgressMsg(t("Uploading images to secure storage..."));
         const signResponse = await fetch(resolveApiUrl("/api/upload/sign"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -322,7 +323,7 @@ export default function ManualPage() {
         });
 
         if (!signResponse.ok) {
-          throw new Error("Failed to sign upload URLs.");
+          throw new Error(t("Failed to sign upload URLs."));
         }
 
         const signedPayload = signedUploadResponseSchema.parse(await signResponse.json());
@@ -338,7 +339,7 @@ export default function ManualPage() {
             });
 
             if (!response.ok) {
-              throw new Error(`Upload failed for image ${index + 1}.`);
+              throw new Error(t("Upload failed for image {index}.", { index: index + 1 }));
             }
           })
         );
@@ -350,7 +351,7 @@ export default function ManualPage() {
         });
       }
 
-      setProgressMsg("Analyzing property...");
+      setProgressMsg(t("Analyzing property..."));
 
       const [analysisResult, intelligenceResult] = await Promise.allSettled([
         fetch(resolveApiUrl("/api/analyze"), {
@@ -369,7 +370,7 @@ export default function ManualPage() {
           }),
         }).then(async (response) => {
           if (!response.ok) {
-            throw new Error("Analyze request failed.");
+            throw new Error(t("Analyze request failed."));
           }
 
           return analyzeResponseSchema.parse(await response.json());
@@ -388,7 +389,7 @@ export default function ManualPage() {
           }),
         }).then(async (response) => {
           if (!response.ok) {
-            throw new Error("Intelligence request failed.");
+            throw new Error(t("Intelligence request failed."));
           }
 
           return intelligenceResponseSchema.parse(await response.json());
@@ -412,7 +413,7 @@ export default function ManualPage() {
       hazards.forEach((hazard) => addHazard(hazard));
       setIntelligence(intelligence);
 
-      setProgressMsg("Generating report...");
+      setProgressMsg(t("Generating report..."));
 
       const reportId = crypto.randomUUID();
       const nextSnapshot: ReportSnapshot = {
@@ -458,10 +459,10 @@ export default function ManualPage() {
         },
       });
       setReportId(reportId);
-      toast.success("Manual report is ready.");
+      toast.success(t("Manual report is ready."));
       router.push(`/report/${reportId}`);
     } catch (error: unknown) {
-      toast.error("Failed to generate report: " + getErrorMessage(error));
+      toast.error(t("Failed to generate report: {message}", { message: error instanceof Error ? error.message : t("Unknown error") }));
     } finally {
       setIsSubmitting(false);
       preparedImages.forEach((item) => URL.revokeObjectURL(item.previewUrl));
@@ -472,22 +473,22 @@ export default function ManualPage() {
     <div className="mx-auto min-h-screen max-w-2xl bg-background px-3 pb-24 pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4 sm:pb-20">
       <div className="mb-6 flex items-center gap-3 pt-2 sm:gap-4 sm:pt-4">
         <Button variant="ghost" size="sm" onClick={() => router.push("/")}>
-          &larr; Back
+          &larr; {t("Back")}
         </Button>
-        <h1 className="text-xl font-bold tracking-tight">Manual Upload</h1>
+        <h1 className="text-xl font-bold tracking-tight">{t("Manual Upload")}</h1>
       </div>
 
       <div className="space-y-6">
         <Card className="border-border/50">
           <CardHeader>
-            <CardTitle>1. Photos</CardTitle>
-            <CardDescription>Upload 1 to 8 photos for hazard analysis.</CardDescription>
+            <CardTitle>{t("1. Photos")}</CardTitle>
+            <CardDescription>{t("Upload 1 to 8 photos for hazard analysis.")}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="mb-4 grid grid-cols-3 gap-2 sm:grid-cols-4">
               {previewUrls.map((url, idx) => (
                 <div key={url} className="group relative aspect-square overflow-hidden rounded-md border border-border bg-muted">
-                  <Image src={url} alt={`Preview ${idx}`} fill unoptimized className="object-cover" />
+                  <Image src={url} alt={t("Preview image {index}", { index: idx + 1 })} fill unoptimized className="object-cover" />
                   <button
                     type="button"
                     onClick={() => removeImage(idx)}
@@ -515,14 +516,14 @@ export default function ManualPage() {
 
         <Card className="border-border/50">
           <CardHeader>
-            <CardTitle>2. Location</CardTitle>
-            <CardDescription>Required for neighborhood intelligence.</CardDescription>
+            <CardTitle>{t("2. Location")}</CardTitle>
+            <CardDescription>{t("Required for neighborhood intelligence.")}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Address</label>
+              <label className="text-sm font-medium">{t("Address")}</label>
               <Input
-                placeholder="e.g. 15 Dandenong Rd, Clayton"
+                placeholder={t("e.g. 15 Dandenong Rd, Clayton")}
                 value={address}
                 onChange={(event) => {
                   setAddress(event.target.value);
@@ -535,16 +536,16 @@ export default function ManualPage() {
               />
               <div className="flex items-center justify-between gap-2">
                 <Button type="button" variant="ghost" size="sm" onClick={handleUseCurrentLocation}>
-                  {locationStatus === "loading" ? "Locating..." : "Use Current Location"}
+                  {locationStatus === "loading" ? t("Locating...") : t("Use Current Location")}
                 </Button>
                 {locationStatus !== "idle" ? (
-                  <span className="text-xs text-muted-foreground">Address lookup: {locationStatus}</span>
+                  <span className="text-xs text-muted-foreground">{t("Address lookup")}: {t(locationStatus)}</span>
                 ) : null}
               </div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Or Pick on Map</label>
+              <label className="text-sm font-medium">{t("Or Pick on Map")}</label>
               <MapPicker
                 onLocationSelect={(nextCoordinates) => {
                   void resolveAddressFromCoordinates(nextCoordinates, true);
@@ -553,7 +554,7 @@ export default function ManualPage() {
               />
               {coordinates ? (
                 <p className="mt-1 text-xs text-accent text-muted-foreground">
-                  Selected: {coordinates.lat.toFixed(4)}, {coordinates.lng.toFixed(4)}
+                  {t("Selected")}: {coordinates.lat.toFixed(4)}, {coordinates.lng.toFixed(4)}
                 </p>
               ) : null}
             </div>
@@ -562,17 +563,17 @@ export default function ManualPage() {
 
         <Card className="border-border/50">
           <CardHeader>
-            <CardTitle>3. Extra Details (Optional)</CardTitle>
+            <CardTitle>{t("3. Extra Details (Optional)")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Real Estate Agency</label>
-              <Input placeholder="e.g. Ray White Clayton" value={agency} onChange={(event) => setAgency(event.target.value)} />
+              <label className="text-sm font-medium">{t("Real Estate Agency")}</label>
+              <Input placeholder={t("e.g. Ray White Clayton")} value={agency} onChange={(event) => setAgency(event.target.value)} />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Property Listing Link</label>
+              <label className="text-sm font-medium">{t("Property Listing Link")}</label>
               <Input
-                placeholder="Paste the Realestate, Domain, or agent listing page URL"
+                placeholder={t("Paste the Realestate, Domain, or agent listing page URL")}
                 value={listingUrl}
                 onChange={(event) => {
                   const nextValue = event.target.value;
@@ -582,7 +583,7 @@ export default function ManualPage() {
                 }}
               />
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                <span>Leave this blank and we&apos;ll try to infer a listing page from the address.</span>
+                <span>{t("Leave this blank and we'll try to infer a listing page from the address.")}</span>
                 <Button
                   type="button"
                   variant="ghost"
@@ -595,14 +596,14 @@ export default function ManualPage() {
                     listingDiscovery.retry();
                   }}
                 >
-                  Auto-detect from address
+                  {t("Auto-detect from address")}
                 </Button>
               </div>
               {listingDiscovery.status !== "idle" || normalizedListingUrl ? (
                 <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                      Listing discovery
+                      {t("Listing discovery")}
                     </div>
                     <Badge
                       variant={
@@ -615,13 +616,13 @@ export default function ManualPage() {
                               : "outline"
                       }
                     >
-                      {normalizedListingUrl ? "linked" : listingDiscovery.status}
+                      {normalizedListingUrl ? t("linked") : t(listingDiscovery.status)}
                     </Badge>
                   </div>
                   <p className="mt-2 text-xs text-muted-foreground">
                     {listingDiscovery.status === "loading"
-                      ? "Searching for likely rental listing pages that match this address..."
-                      : listingDiscovery.summary || "Paste the exact listing page URL if you already have it."}
+                      ? t("Searching for likely rental listing pages that match this address...")
+                      : listingDiscovery.summary || t("You can paste the exact listing page URL if you already have it.")}
                   </p>
                   {normalizedListingUrl ? (
                     <a
@@ -637,34 +638,33 @@ export default function ManualPage() {
               ) : null}
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Weekly Rent</label>
+              <label className="text-sm font-medium">{t("Weekly Rent")}</label>
               <Input
                 inputMode="numeric"
-                placeholder="e.g. 620"
+                placeholder={t("e.g. 620")}
                 value={askingRent}
                 onChange={(event) => setAskingRent(event.target.value.replace(/[^\d]/g, ""))}
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Property Notes</label>
+              <label className="text-sm font-medium">{t("Property Notes")}</label>
               <textarea
-                placeholder="e.g. Top-floor apartment, visible wall stain near the window."
+                placeholder={t("e.g. Top-floor apartment, visible wall stain near the window.")}
                 className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 value={propertyNotes}
                 onChange={(event) => setPropertyNotes(event.target.value)}
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Inspection Checklist & Entry Notes</label>
+              <label className="text-sm font-medium">{t("Inspection Checklist & Entry Notes")}</label>
               <p className="text-xs text-muted-foreground">
-                Record utilities, locks, noise, kitchen and bathroom tests, lease terms, building management, pests,
-                and entry-condition evidence.
+                {t("Record utilities, locks, noise, kitchen and bathroom tests, lease terms, building management, pests, and entry-condition evidence.")}
               </p>
               {checklistPrefill.status !== "idle" ? (
                 <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                      Remote checklist assist
+                      {t("Remote checklist assist")}
                     </div>
                     <Badge
                       variant={
@@ -677,17 +677,17 @@ export default function ManualPage() {
                               : "outline"
                       }
                     >
-                      {checklistPrefill.status}
+                      {t(checklistPrefill.status)}
                     </Badge>
                   </div>
                   <p className="mt-2 text-xs text-muted-foreground">
                     {checklistPrefill.status === "loading"
-                      ? "Searching Google Maps and public web signals to prefill the checklist..."
+                      ? t("Searching Google Maps and public web signals to prefill the checklist...")
                       : checklistPrefill.summary}
                   </p>
                   {checklistPrefill.status === "fallback" || checklistPrefill.status === "error" ? (
                     <Button type="button" variant="ghost" size="sm" className="mt-2 h-auto px-0 text-xs" onClick={checklistPrefill.retry}>
-                      Retry remote prefill
+                      {t("Retry remote prefill")}
                     </Button>
                   ) : null}
                 </div>
@@ -712,7 +712,7 @@ export default function ManualPage() {
             disabled={isSubmitting}
             onClick={handleGenerateReport}
           >
-            {isSubmitting ? progressMsg : "Generate Report"}
+            {isSubmitting ? progressMsg : t("Generate Report")}
           </Button>
         </div>
       </div>

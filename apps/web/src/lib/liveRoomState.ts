@@ -2,7 +2,6 @@ import type {
   Hazard,
   InspectionCoverage,
   LiveGuidanceCapture,
-  LiveHazardEscalation,
   LiveManualOverride,
   LiveRoomScanState,
   ReportEvidenceBasis,
@@ -62,7 +61,7 @@ function buildReasoningSummary(args: {
   return `AI still needs ${args.missingTargetIds.length} required view${args.missingTargetIds.length > 1 ? "s" : ""} before ${formatRoomTypeLabel(args.roomType).toLowerCase()} coverage is complete.`;
 }
 
-export function createRoomScanState(roomType: RoomType, now = Date.now()): LiveRoomScanState {
+export function createRoomScanState(roomType: RoomType): LiveRoomScanState {
   const requiredTargets = getRequiredTargetIds(roomType);
   return {
     roomType,

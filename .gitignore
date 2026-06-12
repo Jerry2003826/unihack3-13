@@ -41,3 +41,7 @@ qdrant_storage/
 .vscode/
 *.swp
 *.swo
+.omni/
+.claude/*.omni-tmp
+.claude/settings.json.omni-bak
+.claude/settings.local.json

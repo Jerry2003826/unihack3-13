@@ -20,7 +20,6 @@ import { applyLiveChecklistCapture, getInspectionChecklistFieldValue } from "@/l
 import {
   buildGuidanceAlertKey,
   getGuidanceProgress,
-  getGuidanceTargetForElapsed,
   getNextGuidanceTarget,
   getVisibleGuidancePlan,
   type CaptureGuidanceTarget,
@@ -307,11 +306,6 @@ export function useVisionEngine({ captureFrame, roomType }: UseVisionEngineArgs)
       return commitRoomState(targetRoomType, escalated);
     },
     [commitRoomState, getRoomState]
-  );
-
-  const getCompletedGuidanceIds = useCallback(
-    (targetRoomType: RoomType) => getRoomState(targetRoomType).completedTargets,
-    [getRoomState]
   );
 
   const getGuidanceCoverageHistory = useCallback((targetRoomType: RoomType, targetId: string) => {

@@ -94,24 +94,28 @@ export async function translateTextBatch(locale: AppLocale, texts: string[]) {
       continue;
     }
 
-    const response = await fetch(resolveApiUrl("/api/translate"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        locale,
-        texts: chunk,
-      }),
-    });
+    try {
+      const response = await fetch(resolveApiUrl("/api/translate"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          locale,
+          texts: chunk,
+        }),
+      });
 
-    if (!response.ok) {
-      continue;
+      if (!response.ok) {
+        continue;
+      }
+
+      const payload = (await response.json()) as { translations?: string[] };
+      const translations = payload.translations ?? chunk;
+      chunk.forEach((source, offset) => {
+        setCached(locale, source, translations[offset] ?? source);
+      });
+    } catch {
+      // If the translate API is unavailable, skip this chunk and keep original text.
     }
-
-    const payload = (await response.json()) as { translations?: string[] };
-    const translations = payload.translations ?? chunk;
-    chunk.forEach((source, offset) => {
-      setCached(locale, source, translations[offset] ?? source);
-    });
   }
 
   return texts.map((text) => getCached(locale, text) ?? text);

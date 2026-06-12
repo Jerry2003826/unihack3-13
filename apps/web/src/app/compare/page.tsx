@@ -15,6 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { saveComparisonReport, saveSearchHistory } from "@/lib/history/historyStore";
 import { publicAppConfig } from "@/lib/config/public";
+import { useI18n } from "@/lib/i18n";
 import { normalizeReportSnapshot } from "@/lib/report/normalizeReportSnapshot";
 import { listReportSnapshots } from "@/lib/report-snapshot/reportSnapshotStore";
 import { useSessionStore } from "@/store/useSessionStore";
@@ -60,6 +61,7 @@ function WeightInput({
 
 export default function ComparePage() {
   const router = useRouter();
+  const { t } = useI18n();
   const { preferenceProfile, updateInspectionDraft } = useSessionStore();
   const [reports, setReports] = useState<ReportSnapshot[]>([]);
   const [selectedReportIds, setSelectedReportIds] = useState<string[]>([]);
@@ -84,12 +86,12 @@ export default function ComparePage() {
         setStatus("success");
       } catch (loadError) {
         setStatus("error");
-        setError(loadError instanceof Error ? loadError.message : "Failed to load saved reports.");
+        setError(loadError instanceof Error ? loadError.message : t("Failed to load saved reports."));
       }
     }
 
     void loadReports();
-  }, []);
+  }, [t]);
 
   const selectedReports = useMemo(
     () => reports.filter((report) => selectedReportIds.includes(report.reportId)),
@@ -108,7 +110,7 @@ export default function ComparePage() {
 
   const handleGenerateComparison = async () => {
     if (selectedReports.length < 2) {
-      toast.error("Select at least two saved reports to compare.");
+      toast.error(t("Select at least two saved reports to compare."));
       return;
     }
 
@@ -172,17 +174,17 @@ export default function ComparePage() {
       router.push(`/compare/${payload.report.comparisonId}`);
     } catch (compareError) {
       setStatus("fallback");
-      setError(compareError instanceof Error ? compareError.message : "Comparison report generation failed.");
-      toast.error(compareError instanceof Error ? compareError.message : "Comparison report generation failed.");
+      setError(compareError instanceof Error ? compareError.message : t("Comparison report generation failed."));
+      toast.error(compareError instanceof Error ? compareError.message : t("Comparison report generation failed."));
     }
   };
 
   if (status === "loading" && reports.length === 0) {
     return (
       <RadarLoader
-        title="Comparison Engine"
-        statusText="Loading saved reports..."
-        description="Preparing candidate cards and weight controls."
+        title={t("Comparison Engine")}
+        statusText={t("Loading saved reports...")}
+        description={t("Preparing candidate cards and weight controls.")}
       />
     );
   }
@@ -192,26 +194,26 @@ export default function ComparePage() {
       <div className="mx-auto flex max-w-6xl flex-col gap-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
           <div className="space-y-2">
-            <div className="text-xs uppercase tracking-[0.2em] text-accent/80">Saved Reports / Compare</div>
-            <h1 className="text-3xl font-semibold tracking-tight text-foreground">Multi-property weighted recommendation</h1>
+            <div className="text-xs uppercase tracking-[0.2em] text-accent/80">{t("Saved Reports / Compare")}</div>
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground">{t("Multi-property weighted recommendation")}</h1>
             <p className="max-w-3xl text-sm text-muted-foreground">
-              Select up to five saved report snapshots, adjust the factor weights, and generate a ranked recommendation.
+              {t("Select up to five saved report snapshots, adjust the factor weights, and generate a ranked recommendation.")}
             </p>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:flex">
             <Button variant="outline" className="w-full sm:w-auto" onClick={() => router.push("/history")}>
-              Search History
+              {t("Search History")}
             </Button>
             <Button variant="ghost" className="w-full sm:w-auto" onClick={() => router.push("/")}>
-              Back Home
+              {t("Back Home")}
             </Button>
           </div>
         </div>
 
         <Card className="border-border/70 bg-card/80">
           <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm text-muted-foreground">
-            <AsyncStatusBadge label="Comparison" status={status} />
-            <div>{selectedReports.length} / 5 candidates selected</div>
+            <AsyncStatusBadge label={t("Comparison")} status={status} />
+            <div>{selectedReports.length} / 5 {t("candidates selected")}</div>
           </CardContent>
         </Card>
 
@@ -224,13 +226,13 @@ export default function ComparePage() {
         <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
           <Card className="border-border/70 bg-card/85">
             <CardHeader>
-              <CardDescription>Saved property reports</CardDescription>
-              <CardTitle>Select candidates to compare</CardTitle>
+              <CardDescription>{t("Saved property reports")}</CardDescription>
+              <CardTitle>{t("Select candidates to compare")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               {reports.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
-                  No saved reports were found in this browser. Generate at least two property reports first.
+                  {t("No saved reports were found in this browser. Generate at least two property reports first.")}
                 </div>
               ) : (
                 reports.map((report) => {
@@ -251,11 +253,11 @@ export default function ComparePage() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="space-y-1">
                           <div className="text-base font-medium text-foreground">
-                            {report.inputs.address || "Untitled report"}
+                            {report.inputs.address || t("Untitled report")}
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {formatTimestamp(report.createdAt)} · Risk {report.propertyRiskScore}/100 · Lighting{" "}
-                            {report.lightingScoreManual ?? report.lightingScoreAuto ?? "n/a"}
+                            {formatTimestamp(report.createdAt)} · {t("Risk")} {report.propertyRiskScore}/100 · {t("Lighting")}{" "}
+                            {report.lightingScoreManual ?? report.lightingScoreAuto ?? t("n/a")}
                           </div>
                         </div>
                         <label className="flex items-center gap-2 text-sm">
@@ -264,12 +266,12 @@ export default function ComparePage() {
                             checked={selected}
                             onChange={() => handleToggleSelection(report.reportId)}
                           />
-                          Compare
+                          {t("Compare")}
                         </label>
                       </div>
                       <div className="mt-4 grid gap-3 sm:grid-cols-2">
                         <div className="space-y-2">
-                          <label className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Weekly Rent</label>
+                          <label className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{t("Weekly Rent")}</label>
                           <Input
                             inputMode="numeric"
                             value={candidateOverride.askingRent}
@@ -285,7 +287,7 @@ export default function ComparePage() {
                           />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Manual Lighting Score</label>
+                          <label className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{t("Manual Lighting Score")}</label>
                           <Input
                             inputMode="numeric"
                             value={candidateOverride.lightingScoreManual}
@@ -302,7 +304,7 @@ export default function ComparePage() {
                         </div>
                       </div>
                       <div className="mt-3 space-y-2">
-                        <label className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Comparison Notes</label>
+                        <label className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{t("Comparison Notes")}</label>
                         <textarea
                           className="flex min-h-[72px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                           value={candidateOverride.notes}
@@ -326,43 +328,43 @@ export default function ComparePage() {
 
           <Card className="border-border/70 bg-card/85">
             <CardHeader>
-              <CardDescription>User priorities</CardDescription>
-              <CardTitle>Adjust factor weights</CardTitle>
+              <CardDescription>{t("User priorities")}</CardDescription>
+              <CardTitle>{t("Adjust factor weights")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Budget Ceiling (weekly)</label>
+                <label className="text-sm font-medium">{t("Budget Ceiling (weekly)")}</label>
                 <Input
                   inputMode="numeric"
-                  placeholder="e.g. 650"
+                  placeholder={t("e.g. 650")}
                   value={budget}
                   onChange={(event) => setBudget(event.target.value.replace(/[^\d]/g, ""))}
                 />
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">Noise tolerance</label>
+                <label className="text-sm font-medium">{t("Noise tolerance")}</label>
                 <select
                   value={noiseTolerance}
                   onChange={(event) => setNoiseTolerance(event.target.value as NoiseTolerance)}
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
+                  <option value="low">{t("Low")}</option>
+                  <option value="medium">{t("Medium")}</option>
+                  <option value="high">{t("High")}</option>
                 </select>
               </div>
 
-              <WeightInput label="Budget" value={weights.budgetWeight} onChange={(value) => setWeights((current) => ({ ...current, budgetWeight: value }))} />
-              <WeightInput label="Commute" value={weights.commuteWeight} onChange={(value) => setWeights((current) => ({ ...current, commuteWeight: value }))} />
-              <WeightInput label="Noise" value={weights.noiseWeight} onChange={(value) => setWeights((current) => ({ ...current, noiseWeight: value }))} />
-              <WeightInput label="Lighting" value={weights.lightingWeight} onChange={(value) => setWeights((current) => ({ ...current, lightingWeight: value }))} />
-              <WeightInput label="Condition" value={weights.conditionWeight} onChange={(value) => setWeights((current) => ({ ...current, conditionWeight: value }))} />
-              <WeightInput label="Agency" value={weights.agencyWeight} onChange={(value) => setWeights((current) => ({ ...current, agencyWeight: value }))} />
-              <WeightInput label="Community" value={weights.communityWeight} onChange={(value) => setWeights((current) => ({ ...current, communityWeight: value }))} />
+              <WeightInput label={t("Budget")} value={weights.budgetWeight} onChange={(value) => setWeights((current) => ({ ...current, budgetWeight: value }))} />
+              <WeightInput label={t("Commute")} value={weights.commuteWeight} onChange={(value) => setWeights((current) => ({ ...current, commuteWeight: value }))} />
+              <WeightInput label={t("Noise")} value={weights.noiseWeight} onChange={(value) => setWeights((current) => ({ ...current, noiseWeight: value }))} />
+              <WeightInput label={t("Lighting")} value={weights.lightingWeight} onChange={(value) => setWeights((current) => ({ ...current, lightingWeight: value }))} />
+              <WeightInput label={t("Condition")} value={weights.conditionWeight} onChange={(value) => setWeights((current) => ({ ...current, conditionWeight: value }))} />
+              <WeightInput label={t("Agency")} value={weights.agencyWeight} onChange={(value) => setWeights((current) => ({ ...current, agencyWeight: value }))} />
+              <WeightInput label={t("Community")} value={weights.communityWeight} onChange={(value) => setWeights((current) => ({ ...current, communityWeight: value }))} />
 
               <Button className="w-full" onClick={handleGenerateComparison} disabled={status === "loading" && reports.length > 0}>
-                Generate Comparison Report
+                {t("Generate Comparison")}
               </Button>
             </CardContent>
           </Card>

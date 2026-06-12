@@ -11,12 +11,11 @@ import {
 } from "@/lib/i18n";
 
 export function I18nProvider({ children }: { children: React.ReactNode }) {
-  const [locale, setLocale] = useState<AppLocale>("en");
-
-  useEffect(() => {
+  const [locale, setLocale] = useState<AppLocale>(() => {
+    if (typeof window === "undefined") return "en";
     const stored = window.localStorage.getItem(LOCALE_STORAGE_KEY);
-    setLocale(normalizeLocale(stored || navigator.language));
-  }, []);
+    return normalizeLocale(stored || navigator.language);
+  });
 
   useEffect(() => {
     window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);

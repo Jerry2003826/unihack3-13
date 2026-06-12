@@ -1,5 +1,4 @@
 import type { ZodTypeAny } from "zod";
-import { toGeminiResponseSchema } from "@inspect-ai/contracts";
 import { extractJsonText, withTimeout } from "./http";
 import { buildCitationsFromGroundedCatalog, extractGroundedCatalog } from "./grounding";
 import { getGeminiClient } from "./providers/gemini";
@@ -16,11 +15,13 @@ export interface SourceCatalogItem {
   provider?: string;
 }
 
-function clean(obj: any) {
-  return Object.fromEntries(Object.entries(obj).filter(([_, v]) => v !== undefined));
+function clean(obj: Record<string, unknown>) {
+  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createGeminiSchema(schema: ZodTypeAny): any {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const def = (schema as any)._def;
   const typeName = schema?.constructor?.name || def?.typeName;
   if (!typeName) return { type: Type.STRING }; // Fallback
@@ -36,11 +37,12 @@ export function createGeminiSchema(schema: ZodTypeAny): any {
       return clean({ type: Type.ARRAY, items: createGeminiSchema(def.type), description: def.description });
     case "ZodObject": {
       const shape = typeof def.shape === "function" ? def.shape() : def.shape;
-      const properties: Record<string, any> = {};
+      const properties: Record<string, unknown> = {};
       const required: string[] = [];
-      for (const [key, value] of Object.entries(shape) as any) {
+      for (const [key, value] of Object.entries(shape as Record<string, ZodTypeAny>)) {
         properties[key] = createGeminiSchema(value);
-        const valTypeName = value?.constructor?.name || value._def?.typeName;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const valTypeName = value?.constructor?.name || (value._def as any)?.typeName;
         if (valTypeName !== "ZodOptional" && valTypeName !== "ZodDefault") {
           required.push(key);
         }
@@ -73,10 +75,12 @@ export async function callGeminiJson<TSchema extends ZodTypeAny>(args: {
   }
 
   const isFlash = args.model.includes("flash");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const canExtend = typeof (args.schema as any).extend === "function";
   const shouldGateway = isFlash && canExtend && !args.skipEscalation;
   const gatewaySchema = shouldGateway
-    ? (args.schema as any).extend({
+    ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (args.schema as any).extend({
         _escalateToPro: z
           .boolean()
           .describe(
@@ -164,7 +168,8 @@ export async function callGeminiGroundedJson<TSchema extends ZodTypeAny>(args: {
 
   const isFlash = args.model.includes("flash");
   const gatewaySchema = isFlash
-    ? (args.schema as any).extend({
+    ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (args.schema as any).extend({
         _escalateToPro: z
           .boolean()
           .describe(
@@ -174,6 +179,7 @@ export async function callGeminiGroundedJson<TSchema extends ZodTypeAny>(args: {
       })
     : args.schema;
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const contents: any[] = [
     {
       role: "user",
@@ -273,7 +279,8 @@ export async function callGeminiSearchGroundedJson<TSchema extends ZodTypeAny>(a
 
   const isFlash = args.model.includes("flash");
   const gatewaySchema = isFlash
-    ? (args.schema as any).extend({
+    ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (args.schema as any).extend({
         _escalateToPro: z
           .boolean()
           .describe(
@@ -283,6 +290,7 @@ export async function callGeminiSearchGroundedJson<TSchema extends ZodTypeAny>(a
       })
     : args.schema;
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const contents: any[] = [
     {
       role: "user",

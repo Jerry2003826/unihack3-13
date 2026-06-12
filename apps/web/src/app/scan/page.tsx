@@ -15,6 +15,7 @@ import { BoundingBoxOverlay } from "@/components/scanner/BoundingBoxOverlay";
 import { RoomScene3DDialog } from "@/components/scanner/RoomScene3DDialog";
 import { Button } from "@/components/ui/button";
 import { FallbackTrigger } from "@/components/shared/FallbackTrigger";
+import { useI18n } from "@/lib/i18n";
 import type { RoomType, ReportSnapshot } from "@inspect-ai/contracts";
 import { toast } from "sonner";
 
@@ -26,6 +27,7 @@ function getErrorMessage(error: unknown): string {
 
 export default function ScanPage() {
   const router = useRouter();
+  const { t } = useI18n();
   const sessionStore = useSessionStore();
   const hazardStore = useHazardStore();
   const { address, isDemoMode, roomScenes3d, setReportId, setIsDemoMode, upsertRoomScene3D } = sessionStore;
@@ -80,31 +82,31 @@ export default function ScanPage() {
         const message = getCameraError();
         setCameraError(message);
         setScanPhase("error");
-        toast.error(message ?? "Camera access failed.");
+        toast.error(message ?? t("Camera access failed."));
         return;
       }
     }
 
     setScanPhase("scanning");
-    toast.info(isDemoMode ? "Demo scan started" : "Scan started");
+    toast.info(isDemoMode ? t("Demo scan started") : t("Scan started"));
   };
 
   const handlePauseScan = () => {
     setScanPhase("stopped");
-    toast.info("Scan paused");
+    toast.info(t("Scan paused"));
   };
 
   const handleEndScan = async () => {
     if (!currentRoomState.endAllowed && currentRoomState.status !== "forced-incomplete") {
-      toast.error("End or force-end the current room before generating the report.");
+      toast.error(t("End or force-end the current room before generating the report."));
       return;
     }
 
     handlePauseScan();
     stopCamera();
     cancelAlerts();
-    
-    const toastId = toast.loading("Finalizing inspection report...");
+
+    const toastId = toast.loading(t("Finalizing inspection report..."));
 
     try {
       const generatedReportId = crypto.randomUUID();
@@ -162,7 +164,7 @@ export default function ScanPage() {
       toast.dismiss(toastId);
       router.replace(`/report/${generatedReportId}`);
     } catch (err: unknown) {
-      toast.error("Failed to finalize report: " + getErrorMessage(err));
+      toast.error(t("Failed to finalize report: {message}", { message: getErrorMessage(err) }));
       toast.dismiss(toastId);
     }
   };
@@ -173,7 +175,7 @@ export default function ScanPage() {
     clearCameraError();
     setCameraError(null);
     setScanPhase("idle");
-    toast.info("Ready to retry. Tap Start Scan to continue.");
+    toast.info(t("Ready to retry. Tap Start Scan to continue."));
   };
 
   const handleEnableDemoMode = () => {
@@ -183,14 +185,14 @@ export default function ScanPage() {
     setCameraError(null);
     setIsDemoMode(true);
     setScanPhase("idle");
-    toast.info("Demo Mode enabled. Tap Start Scan to continue.");
+    toast.info(t("Demo Mode enabled. Tap Start Scan to continue."));
   };
 
   const handle3DStudioOpenChange = (nextOpen: boolean) => {
     if (nextOpen && scanPhase === "scanning") {
       setScanPhase("stopped");
       cancelAlerts();
-      toast.info("Live guidance paused while 3D Scan Studio is open.");
+      toast.info(t("Live guidance paused while 3D Scan Studio is open."));
     }
 
     setIs3DStudioOpen(nextOpen);
@@ -228,17 +230,18 @@ export default function ScanPage() {
               value={roomType}
               onChange={(e) => setRoomType(e.target.value as RoomType)}
             >
-              {ROOM_OPTIONS.map((rt) => (
-                <option key={rt} value={rt}>{rt.toUpperCase().replace("-", " ")}</option>
-              ))}
+              {ROOM_OPTIONS.map((rt) => {
+                const roomKey = rt === "unknown" ? "general area" : rt.replace(/-/g, " ");
+                return <option key={rt} value={rt}>{t(roomKey)}</option>;
+              })}
             </select>
             
             <div className="mt-3 flex items-center justify-between text-xs text-white/80 font-medium">
               <div className="flex items-center gap-2">
                 <span className={`w-2 h-2 rounded-full ${isAnalyzing ? "bg-accent animate-pulse" : "bg-muted-foreground"}`} />
-                {cameraError ? "Camera blocked" : isAnalyzing ? "AI Analyzing..." : isDemoMode ? "Demo ready" : "Ready"}
+                {cameraError ? t("Camera blocked") : isAnalyzing ? t("AI Analyzing...") : isDemoMode ? t("Demo ready") : t("Ready")}
               </div>
-              <div>Hazards: {hazards.length}</div>
+              <div>{t("Hazards: {count}", { count: hazards.length })}</div>
             </div>
           </div>
 
@@ -246,38 +249,38 @@ export default function ScanPage() {
             <div className="flex items-center justify-between gap-3">
               <div className="font-medium">
                 {currentRoomState.status === "forced-incomplete"
-                  ? "Room force-ended"
+                  ? t("Room force-ended")
                   : currentRoomState.endAllowed
-                    ? "Room ready to end"
-                    : "Room coverage in progress"}
+                    ? t("Room ready to end")
+                    : t("Room coverage in progress")}
               </div>
               <div>
                 {inspectionCoverage.coverageStatus === "complete"
-                  ? "Coverage complete"
+                  ? t("Coverage complete")
                   : inspectionCoverage.coverageStatus === "mixed"
-                    ? "Coverage mixed"
-                    : "Coverage still missing"}
+                    ? t("Coverage mixed")
+                    : t("Coverage still missing")}
               </div>
             </div>
             <div className="mt-2 text-white/70">
-              Required views captured: {currentRoomState.completedTargets.length}/
+              {t("Required views captured")}: {currentRoomState.completedTargets.length}/
               {currentRoomState.requiredTargets.length + currentRoomState.escalationTargets.length}
             </div>
             {currentRoomState.currentTargetId ? (
               <div className="mt-2 text-white/70">
-                Current target: {guidanceTarget?.label ?? currentRoomState.currentTargetId}
+                {t("Current target")}: {guidanceTarget?.label ?? currentRoomState.currentTargetId}
               </div>
             ) : null}
             {currentRoomState.endBlockedReasons.length > 0 ? (
               <div className="mt-2 space-y-1 text-white/65">
-                <div className="font-medium text-white/75">Still missing</div>
+                <div className="font-medium text-white/75">{t("Still missing")}</div>
                 {currentRoomState.endBlockedReasons.slice(0, 3).map((reason) => (
                   <div key={reason}>{reason}</div>
                 ))}
               </div>
             ) : (
               <div className="mt-2 text-emerald-300">
-                AI has enough evidence for this room. End the room or generate the report.
+                {t("AI has enough evidence for this room. End the room or generate the report.")}
               </div>
             )}
           </div>
@@ -291,7 +294,7 @@ export default function ScanPage() {
                   }`}
                 />
                 <span className="font-medium">
-                  {banner.tone === "success" ? "Confirmed" : "AI guidance"}
+                  {banner.tone === "success" ? t("Confirmed") : t("AI guidance")}
                 </span>
               </div>
               <p className="mt-2 text-muted-foreground">{banner.text}</p>
@@ -301,33 +304,33 @@ export default function ScanPage() {
           {showManualAssist ? (
             <div className="rounded-2xl border border-border/70 bg-card/92 p-3 text-sm text-foreground shadow-2xl backdrop-blur">
               <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                Manual Assist
+                {t("Manual Assist")}
               </div>
               {activeIssueObservation ? (
                 <>
                   <p className="mt-2 text-sm text-foreground">
-                    AI flagged <span className="font-semibold">{activeIssueObservation.category}</span>. You can override it.
+                    {t("AI flagged {category}. You can override it.", { category: activeIssueObservation.category })}
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button size="sm" variant="outline" onClick={dismissCurrentIssue}>
-                      Not an issue
+                      {t("Not an issue")}
                     </Button>
                     <Button size="sm" onClick={recordCurrentIssueNow}>
-                      Add to report now
+                      {t("Add to report now")}
                     </Button>
                   </div>
                 </>
               ) : guidanceTarget ? (
                 <>
                   <p className="mt-2 text-sm text-foreground">
-                    Reviewing <span className="font-semibold">{guidanceTarget.label}</span>. You can advance manually.
+                    {t("Reviewing {label}. You can advance manually.", { label: guidanceTarget.label })}
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button size="sm" onClick={markCurrentGuidanceChecked}>
-                      Mark checked
+                      {t("Mark checked")}
                     </Button>
                     <Button size="sm" variant="outline" onClick={skipCurrentGuidance}>
-                      Skip
+                      {t("Skip")}
                     </Button>
                   </div>
                 </>
@@ -337,16 +340,16 @@ export default function ScanPage() {
 
           {cameraError ? (
             <div className="rounded-2xl border border-border/70 bg-card/95 p-4 text-sm text-foreground shadow-2xl backdrop-blur">
-              <div className="font-medium">Camera access was denied.</div>
+              <div className="font-medium">{t("Camera access was denied.")}</div>
               <p className="mt-2 text-muted-foreground">
                 {cameraError}
               </p>
               <div className="mt-4 flex gap-3">
                 <Button variant="outline" onClick={handleRetryCamera}>
-                  Retry
+                  {t("Retry")}
                 </Button>
                 <Button onClick={handleEnableDemoMode}>
-                  Enable Demo Mode
+                  {t("Enable Demo Mode")}
                 </Button>
               </div>
             </div>
@@ -357,28 +360,28 @@ export default function ScanPage() {
       {/* Bottom Controls */}
       <div className="absolute inset-x-0 bottom-0 z-30 flex flex-col items-center gap-3 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-4 pb-safe sm:gap-4 sm:p-6">
         {scanPhase === "idle" || scanPhase === "stopped" ? (
-          <Button 
+          <Button
             className="h-12 w-full max-w-xs rounded-full bg-accent text-base text-accent-foreground shadow-[0_0_20px_rgba(61,220,255,0.4)] sm:h-14 sm:text-lg"
             onClick={handleStartScan}
           >
-            Start Scan
+            {t("Start Scan")}
           </Button>
         ) : (
-          <Button 
+          <Button
             variant="secondary"
             className="h-12 w-full max-w-xs rounded-full bg-white/20 text-base text-white backdrop-blur-md hover:bg-white/30 sm:h-14 sm:text-lg"
             onClick={handlePauseScan}
           >
-            Pause
+            {t("Pause")}
           </Button>
         )}
 
-        <Button 
+        <Button
           variant="destructive"
           className="mt-1 h-11 w-full max-w-xs rounded-full font-semibold sm:mt-2 sm:h-12"
           onClick={handleEndScan}
         >
-          Generate Report
+          {t("End & Generate Report")}
         </Button>
 
         <Button
@@ -387,7 +390,7 @@ export default function ScanPage() {
           onClick={forceEndCurrentRoom}
           disabled={currentRoomState.status === "not-started"}
         >
-          {currentRoomState.endAllowed ? "End Current Room" : "Force End Current Room"}
+          {currentRoomState.endAllowed ? t("End Current Room") : t("Force End Current Room")}
         </Button>
 
         <Button
@@ -396,7 +399,7 @@ export default function ScanPage() {
           onClick={() => handle3DStudioOpenChange(true)}
           disabled={!isDemoMode && scanPhase === "idle"}
         >
-          Open 3D Scan Studio
+          {t("Open 3D Scan Studio")}
         </Button>
       </div>
 
